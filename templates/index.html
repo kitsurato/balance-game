@@ -41,10 +41,15 @@
 
     <div id="app" class="w-full max-w-lg p-4 relative h-full flex flex-col">
         
-        <header class="flex justify-between items-end mb-4 z-10 shrink-0">
-            <div>
-                <h1 class="text-2xl font-black tracking-tighter text-slate-900 leading-none">BALANCE</h1>
-                <p class="text-[10px] text-slate-400 tracking-widest uppercase">Survival Game</p>
+        <header class="flex justify-between items-start mb-4 z-10 shrink-0">
+            <div class="flex items-center gap-2">
+                <button @click="showAdmin = true" class="text-slate-300 hover:text-slate-500 p-1">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </button>
+                <div>
+                    <h1 class="text-2xl font-black tracking-tighter text-slate-900 leading-none">BALANCE</h1>
+                    <p class="text-[10px] text-slate-400 tracking-widest uppercase">Survival Game</p>
+                </div>
             </div>
             <div v-if="gameState.phase !== 'LOBBY'" class="text-right">
                 <div class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full inline-block mb-1">
@@ -56,6 +61,55 @@
                 </div>
             </div>
         </header>
+
+        <transition name="fade">
+            <div v-if="showAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[80vh]">
+                    <div class="bg-slate-900 text-white p-4 flex justify-between items-center shrink-0">
+                        <span class="font-bold">ADMIN PANEL</span>
+                        <button @click="showAdmin = false" class="text-slate-400 hover:text-white">✕</button>
+                    </div>
+                    
+                    <div class="p-6 flex-1 overflow-y-auto">
+                        <div v-if="!isAdminAuth" class="space-y-4">
+                            <p class="text-sm text-slate-500">请输入管理员密码</p>
+                            <input v-model="adminPass" type="password" class="w-full border p-3 rounded-lg text-center tracking-widest" placeholder="Password">
+                            <button @click="adminLogin" class="w-full bg-slate-800 text-white p-3 rounded-lg font-bold">解锁</button>
+                            <p v-if="adminError" class="text-red-500 text-xs text-center">密码错误</p>
+                        </div>
+
+                        <div v-else class="space-y-6">
+                            <div>
+                                <h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Global Actions</h3>
+                                <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold hover:bg-red-600 hover:text-white transition">
+                                    立即重置游戏 (RESET)
+                                </button>
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between items-center mb-2">
+                                    <h3 class="text-xs font-bold text-slate-400 uppercase">Available Rules</h3>
+                                    <button @click="refreshPool" class="text-xs text-indigo-500">刷新</button>
+                                </div>
+                                
+                                <div v-if="adminPool.length === 0" class="text-center text-xs text-slate-300 py-4 border border-dashed rounded">
+                                    规则池已空
+                                </div>
+
+                                <div class="space-y-2">
+                                    <div v-for="rule in adminPool" :key="rule.id" class="text-xs border rounded-lg p-2 bg-slate-50 flex justify-between items-center gap-2">
+                                        <span class="text-slate-600 leading-tight flex-1">[[ rule.desc ]]</span>
+                                        <button @click="adminAddRule(rule.id)" class="bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap hover:bg-emerald-500">
+                                            添加
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
 
         <div class="flex-1 relative w-full mb-4">
             
@@ -107,15 +161,10 @@
                             <span>全员确认后立即开始</span>
                             <span class="font-mono">[[ confirmedCount ]] / [[ playerList.length ]]</span>
                         </div>
-                        
-                        <button @click="confirmRule" 
-                                :disabled="me && me.confirmed"
+                        <button @click="confirmRule" :disabled="me && me.confirmed"
                                 :class="me && me.confirmed ? 'bg-emerald-500 text-white cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95'"
                                 class="w-full h-14 rounded-xl font-bold text-lg shadow-lg transition flex items-center justify-center gap-2">
-                            <span v-if="me && me.confirmed">
-                                <svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                                <span>等待其他玩家</span>
-                            </span>
+                            <span v-if="me && me.confirmed">等待其他玩家</span>
                             <span v-else>我已知晓</span>
                         </button>
                     </div>
@@ -126,17 +175,12 @@
                 <div v-if="gameState.phase === 'RULE_ANNOUNCEMENT'" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-white rounded-2xl p-6 z-50 overflow-hidden relative">
                     <div class="absolute top-0 left-0 w-full h-4 hazard-stripe opacity-80"></div>
                     <div class="absolute bottom-0 left-0 w-full h-4 hazard-stripe opacity-80"></div>
-                    
                     <div class="text-6xl mb-6 animate-bounce">⚠</div>
                     <h2 class="text-3xl font-black text-yellow-400 mb-2 tracking-widest text-center">WARNING</h2>
                     <p class="text-sm text-slate-400 mb-8 uppercase tracking-widest">New Rule In Effect</p>
-                    
                     <div class="bg-red-600 p-6 rounded-xl shadow-2xl w-full text-center border-2 border-red-400">
-                        <p class="text-xl font-black text-white leading-relaxed">
-                            [[ gameState.new_rule ? gameState.new_rule.desc : 'Loading...' ]]
-                        </p>
+                        <p class="text-xl font-black text-white leading-relaxed">[[ gameState.new_rule ? gameState.new_rule.desc : 'Loading...' ]]</p>
                     </div>
-                    
                     <div class="mt-8 text-center">
                         <p class="text-xs text-slate-500">RESUMING IN</p>
                         <p class="text-4xl font-mono font-bold text-yellow-400">[[ timer ]]</p>
@@ -152,18 +196,14 @@
                             <div class="h-px bg-slate-200 flex-1"></div>
                         </div>
                         <div class="flex flex-wrap gap-2 max-h-20 overflow-y-auto">
-                            <div v-for="rule in gameState.rules" :key="rule.id" class="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded">
-                                [[ rule.desc ]]
-                            </div>
+                            <div v-for="rule in gameState.rules" :key="rule.id" class="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded">[[ rule.desc ]]</div>
                         </div>
                     </div>
-
                     <div v-if="me && !me.alive" class="flex-1 flex flex-col items-center justify-center text-center">
                         <span class="text-5xl mb-4 grayscale opacity-50">💀</span>
                         <h2 class="text-2xl font-black text-slate-800">ELIMINATED</h2>
                         <p class="text-slate-400 mt-2 text-sm">观战中</p>
                     </div>
-
                     <div v-else-if="me && me.submitted" class="flex-1 flex flex-col items-center justify-center text-center">
                         <div class="w-16 h-16 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mb-4">
                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
@@ -172,26 +212,16 @@
                         <p class="text-3xl font-black text-slate-900 mt-1">[[ myGuess ]]</p>
                         <p class="text-xs text-slate-400 mt-4 animate-pulse">等待对手...</p>
                     </div>
-
                     <div v-else class="flex-1 flex flex-col justify-center">
                         <div class="text-center mb-6">
                             <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select Number</label>
                             <div class="text-8xl font-black text-slate-800 my-2 tabular-nums tracking-tighter">[[ inputVal ]]</div>
                         </div>
-                        
                         <div class="px-2 mb-8">
-                            <input type="range" min="0" max="100" v-model.number="inputVal" 
-                                class="w-full h-3 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400">
-                            <div class="flex justify-between text-[10px] text-slate-400 mt-2 font-bold px-1">
-                                <span>0</span>
-                                <span>50</span>
-                                <span>100</span>
-                            </div>
+                            <input type="range" min="0" max="100" v-model.number="inputVal" class="w-full h-3 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400">
+                            <div class="flex justify-between text-[10px] text-slate-400 mt-2 font-bold px-1"><span>0</span><span>50</span><span>100</span></div>
                         </div>
-
-                        <button @click="submitGuess" class="w-full bg-slate-900 text-white h-16 rounded-2xl font-bold text-xl shadow-xl hover:bg-slate-800 transform active:scale-95 transition flex items-center justify-center gap-2">
-                            <span>确认选择</span>
-                        </button>
+                        <button @click="submitGuess" class="w-full bg-slate-900 text-white h-16 rounded-2xl font-bold text-xl shadow-xl hover:bg-slate-800 transform active:scale-95 transition flex items-center justify-center gap-2"><span>确认选择</span></button>
                     </div>
                 </div>
             </transition>
@@ -201,37 +231,16 @@
                     <div class="text-center mb-4 shrink-0">
                         <p class="text-[10px] text-slate-400 uppercase mb-2">Round Result</p>
                         <div class="flex items-center justify-center gap-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                            <div>
-                                <div class="text-lg text-slate-500 font-medium">[[ gameState.last_result.avg ]]</div>
-                                <div class="text-[10px] text-slate-300 font-bold">AVG</div>
-                            </div>
+                            <div><div class="text-lg text-slate-500 font-medium">[[ gameState.last_result.avg ]]</div><div class="text-[10px] text-slate-300 font-bold">AVG</div></div>
                             <div class="text-xl text-slate-300">→</div>
-                            <div>
-                                <div class="text-3xl text-indigo-600 font-black">[[ gameState.last_result.target ]]</div>
-                                <div class="text-[10px] text-indigo-400 font-bold">TARGET</div>
-                            </div>
+                            <div><div class="text-3xl text-indigo-600 font-black">[[ gameState.last_result.target ]]</div><div class="text-[10px] text-indigo-400 font-bold">TARGET</div></div>
                         </div>
-                        <div v-if="gameState.last_result.log.includes('触发') || gameState.last_result.log.includes('冲突')" 
-                             class="mt-2 text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded inline-block">
-                            [[ gameState.last_result.log.split('|').slice(1).join(' | ') ]]
-                        </div>
+                        <div v-if="gameState.last_result.log.includes('触发') || gameState.last_result.log.includes('冲突')" class="mt-2 text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded inline-block">[[ gameState.last_result.log.split('|').slice(1).join(' | ') ]]</div>
                     </div>
-
                     <div class="flex-1 overflow-y-auto space-y-2 pr-1 pb-2">
-                        <div v-for="detail in sortedDetails" :key="detail.name" 
-                             class="flex items-center justify-between p-3 rounded-xl border"
-                             :class="detail.win ? 'bg-indigo-50 border-indigo-100 shadow-sm' : 'bg-white border-slate-100'">
-                            
-                            <div class="flex items-center gap-3">
-                                <span class="font-bold text-sm truncate max-w-[80px]" :class="detail.win ? 'text-indigo-700' : 'text-slate-600'">[[ detail.name ]]</span>
-                                <span class="text-xs font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">[[ detail.val ]]</span>
-                            </div>
-
-                            <div class="flex items-center gap-2">
-                                <span v-if="detail.win" class="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">WIN</span>
-                                <span v-else class="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded animate-pulse">-[[ detail.dmg ]]</span>
-                                <span class="text-sm font-black text-slate-700 leading-none">[[ detail.hp ]]</span>
-                            </div>
+                        <div v-for="detail in sortedDetails" :key="detail.name" class="flex items-center justify-between p-3 rounded-xl border" :class="detail.win ? 'bg-indigo-50 border-indigo-100 shadow-sm' : 'bg-white border-slate-100'">
+                            <div class="flex items-center gap-3"><span class="font-bold text-sm truncate max-w-[80px]" :class="detail.win ? 'text-indigo-700' : 'text-slate-600'">[[ detail.name ]]</span><span class="text-xs font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">[[ detail.val ]]</span></div>
+                            <div class="flex items-center gap-2"><span v-if="detail.win" class="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">WIN</span><span v-else class="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded animate-pulse">-[[ detail.dmg ]]</span><div class="flex flex-col items-end w-8"><span class="text-sm font-black text-slate-700 leading-none">[[ detail.hp ]]</span></div></div>
                         </div>
                     </div>
                 </div>
@@ -250,19 +259,14 @@
         <div class="shrink-0 pt-2 border-t border-slate-200 bg-slate-100/50 backdrop-blur-sm -mx-4 px-4 pb-2">
             <div class="grid grid-cols-5 gap-1.5 h-16 content-end">
                 <div v-for="p in playerList" :key="p.sid" class="flex flex-col justify-end group relative">
+                    <div class="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">[[ p.name ]] ([[ p.hp ]])</div>
                     <div class="h-full w-full bg-slate-200 rounded-lg overflow-hidden relative border border-slate-300/50">
-                         <div class="absolute bottom-0 left-0 w-full hp-bar" 
-                             :class="getHpColor(p.hp)" 
-                             :style="{ height: (p.hp * 10) + '%' }">
-                         </div>
+                         <div class="absolute bottom-0 left-0 w-full hp-bar" :class="getHpColor(p.hp)" :style="{ height: (p.hp * 10) + '%' }"></div>
                     </div>
-                    <div class="text-[10px] text-center text-slate-400 font-bold mt-1 truncate">
-                        [[ p.name.substring(0, 3) ]]
-                    </div>
+                    <div class="text-[10px] text-center text-slate-400 font-bold mt-1 truncate">[[ p.name.substring(0, 3) ]]</div>
                 </div>
             </div>
         </div>
-
     </div>
 
     <script>
@@ -286,11 +290,31 @@
                 const myGuess = ref(null);
                 const mySessionId = ref(null);
                 const basicRules = ref([]);
+                
+                // Admin State
+                const showAdmin = ref(false);
+                const adminPass = ref('');
+                const isAdminAuth = ref(false);
+                const adminError = ref(false);
+                const adminPool = ref([]);
 
                 socket.on('connect', () => { mySessionId.value = socket.id; });
                 socket.on('init_config', (data) => { basicRules.value = data.basic_rules; });
                 socket.on('state_update', (data) => { gameState.value = data; timer.value = data.timer; });
                 socket.on('timer_update', (data) => { timer.value = data.timer; });
+
+                // Admin Listeners
+                socket.on('admin_auth_success', (data) => {
+                    isAdminAuth.value = true;
+                    adminError.value = false;
+                    adminPool.value = data.pool;
+                });
+                socket.on('admin_auth_fail', () => {
+                    adminError.value = true;
+                });
+                socket.on('admin_pool_update', (data) => {
+                    adminPool.value = data.pool;
+                });
 
                 const me = computed(() => gameState.value.players[mySessionId.value]);
                 const playerList = computed(() => Object.entries(gameState.value.players).map(([sid, p]) => ({...p, sid})));
@@ -298,11 +322,7 @@
                     if (!gameState.value.last_result.details) return [];
                     return [...gameState.value.last_result.details].sort((a, b) => b.hp - a.hp);
                 });
-                
-                // 计算已确认人数
-                const confirmedCount = computed(() => {
-                    return Object.values(gameState.value.players).filter(p => p.confirmed && p.alive).length;
-                });
+                const confirmedCount = computed(() => Object.values(gameState.value.players).filter(p => p.confirmed && p.alive).length);
 
                 const joinGame = () => { if(nickname.value) socket.emit('join', { name: nickname.value }); };
                 const startGame = () => socket.emit('start_game');
@@ -318,6 +338,27 @@
                     myGuess.value = null;
                 };
 
+                // Admin Methods
+                const adminLogin = () => {
+                    socket.emit('admin_login', { password: adminPass.value });
+                };
+                const adminReset = () => {
+                    if (confirm("确定要强制重置游戏吗？")) {
+                        socket.emit('admin_command', { password: adminPass.value, cmd: 'reset' });
+                        showAdmin.value = false;
+                    }
+                };
+                const adminAddRule = (id) => {
+                    if (confirm("确定要立即激活此规则吗？")) {
+                        socket.emit('admin_command', { password: adminPass.value, cmd: 'add_rule', rule_id: id });
+                        // 乐观更新，避免等待
+                        adminPool.value = adminPool.value.filter(r => r.id !== id);
+                    }
+                };
+                const refreshPool = () => {
+                    socket.emit('admin_command', { password: adminPass.value, cmd: 'refresh_pool' });
+                }
+
                 const getHpColor = (hp) => hp > 5 ? 'bg-emerald-500' : (hp > 2 ? 'bg-amber-400' : 'bg-red-500');
                 const getWinnerName = () => {
                     const survivor = Object.values(gameState.value.players).find(p => p.alive);
@@ -327,7 +368,11 @@
                 return {
                     gameState, nickname, inputVal, timer, mySessionId, basicRules,
                     me, playerList, sortedDetails, myGuess, confirmedCount,
+                    // Admin Vars
+                    showAdmin, adminPass, isAdminAuth, adminError, adminPool,
+                    // Actions
                     joinGame, startGame, confirmRule, submitGuess, resetGame,
+                    adminLogin, adminReset, adminAddRule, refreshPool,
                     getHpColor, getWinnerName
                 }
             }

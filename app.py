@@ -7,6 +7,9 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+# --- 管理员配置 ---
+ADMIN_PASSWORD = "admin"  # 这里设置你的管理员密码
+
 # --- 游戏配置 ---
 MAX_HP = 10
 TIME_LIMIT_ROUND = 30
@@ -24,7 +27,6 @@ game_state = {
     "last_result": {} 
 }
 
-# --- 文案优化后的规则 ---
 BASIC_RULES = [
     "每轮选取 0 至 100 之间的整数。",
     "目标值为全员平均数的 0.8 倍。",
@@ -32,11 +34,17 @@ BASIC_RULES = [
     "玩家淘汰时，自动追加隐藏规则。"
 ]
 
-RULE_POOL = [
+# 初始规则库备份，用于重置
+INITIAL_RULE_POOL = [
     {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。"},
     {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。"},
-    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。"}
+    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。"},
+    {"id": 4, "desc": "【盲盒】本回合所有玩家无法看到自己的输入数值。"},
+    {"id": 5, "desc": "【狂暴】本回合所有扣血伤害 +1。"}
 ]
+
+# 当前剩余的规则池
+current_rule_pool = list(INITIAL_RULE_POOL)
 
 timer_thread = None
 
@@ -65,7 +73,6 @@ def start_new_round():
     game_state["phase"] = "INPUT"
     game_state["round"] += 1
     game_state["timer"] = TIME_LIMIT_ROUND
-    # 重置输入状态
     for p in game_state["players"].values():
         p["submitted"] = False
         p["guess"] = None
@@ -78,13 +85,9 @@ def check_all_submitted():
         calculate_round()
 
 def check_all_confirmed():
-    """检查是否所有人都确认了规则"""
     alive = [p for p in game_state["players"].values() if p["alive"]]
     if not alive: return
-    
-    # 如果所有存活玩家都 confirm 了
     if all(p.get("confirmed", False) for p in alive):
-        # 立即开始游戏，跳过剩余时间
         start_new_round()
 
 def calculate_round():
@@ -111,7 +114,12 @@ def calculate_round():
     
     rule_ids = [r["id"] for r in game_state["rules"]]
 
-    # 规则判断
+    # 规则: 狂暴
+    if 5 in rule_ids:
+        base_damage += 1
+        log_msg += " | 狂暴(+1伤)"
+
+    # 规则: 极值
     rule3_triggered = False
     if 3 in rule_ids and 0 in values and 100 in values:
         winners = [g["player"] for g in guesses if g["val"] == 100]
@@ -157,17 +165,17 @@ def calculate_round():
             "win": is_winner
         })
 
+    # 处理死亡与自动规则触发
     newly_dead = [p for p in players.values() if p["hp"] <= 0 and p["alive"]]
     game_state["new_rule"] = None 
 
     triggered_new_rule = False
     for p in newly_dead:
         p["alive"] = False
-        if RULE_POOL and not triggered_new_rule: 
-            new_rule = RULE_POOL.pop(0)
-            game_state["rules"].append(new_rule)
-            game_state["new_rule"] = new_rule
-            log_msg += f" | ⚠新规则: {new_rule['desc']}"
+        # 仅当还有规则且本轮未触发过时触发
+        if current_rule_pool and not triggered_new_rule: 
+            new_rule = current_rule_pool.pop(0)
+            trigger_rule_event(new_rule, log_msg)
             triggered_new_rule = True
 
     game_state["last_result"] = {
@@ -182,6 +190,13 @@ def calculate_round():
     broadcast_state()
     
     threading.Timer(5, after_result_display, [triggered_new_rule]).start()
+
+def trigger_rule_event(new_rule, log_msg_append=""):
+    """激活新规则并触发公告"""
+    game_state["rules"].append(new_rule)
+    game_state["new_rule"] = new_rule
+    if log_msg_append:
+        log_msg_append += f" | ⚠新规则: {new_rule['desc']}"
 
 def after_result_display(has_new_rule):
     alive_count = sum(1 for p in game_state["players"].values() if p["alive"])
@@ -198,6 +213,8 @@ def after_result_display(has_new_rule):
 
 def broadcast_state():
     socketio.emit('state_update', game_state)
+
+# --- 路由与事件 ---
 
 @app.route('/')
 def index():
@@ -218,7 +235,7 @@ def on_join(data):
     
     game_state["players"][sid] = {
         "name": name, "hp": MAX_HP, "alive": True,
-        "guess": None, "submitted": False, "confirmed": False, # 新增确认字段
+        "guess": None, "submitted": False, "confirmed": False,
         "last_dmg": 0, "is_winner": False
     }
     broadcast_state()
@@ -226,11 +243,8 @@ def on_join(data):
 @socketio.on('start_game')
 def on_start():
     if len(game_state["players"]) < 3: return
-    
-    # 重置所有人的 confirmed 状态
     for p in game_state["players"].values():
         p["confirmed"] = False
-
     game_state["phase"] = "PRE_GAME"
     game_state["round"] = 0
     game_state["timer"] = TIME_LIMIT_PREGAME
@@ -243,12 +257,11 @@ def on_start():
 
 @socketio.on('confirm_rule')
 def on_confirm_rule():
-    """玩家确认规则"""
     sid = request.sid
     if sid in game_state["players"]:
         game_state["players"][sid]["confirmed"] = True
         broadcast_state()
-        check_all_confirmed() # 检查是否全员通过
+        check_all_confirmed()
 
 @socketio.on('submit_guess')
 def on_submit(data):
@@ -256,7 +269,6 @@ def on_submit(data):
     if sid not in game_state["players"]: return
     player = game_state["players"][sid]
     if not player["alive"]: return
-    
     try:
         val = int(data.get('val'))
         if 0 <= val <= 100:
@@ -266,21 +278,53 @@ def on_submit(data):
             check_all_submitted()
     except: pass
 
-@socketio.on('reset_game')
-def on_reset():
-    global game_state, RULE_POOL
-    game_state["phase"] = "LOBBY"
-    game_state["round"] = 0
-    game_state["players"] = {}
-    game_state["rules"] = []
-    game_state["logs"] = []
-    game_state["new_rule"] = None
-    RULE_POOL = [
-        {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。"},
-        {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。"},
-        {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。"}
-    ]
-    broadcast_state()
+# --- 管理员相关事件 ---
+
+@socketio.on('admin_login')
+def on_admin_login(data):
+    """管理员登录验证"""
+    if data.get('password') == ADMIN_PASSWORD:
+        # 登录成功，发送当前的规则池给管理员
+        emit('admin_auth_success', {'pool': current_rule_pool})
+    else:
+        emit('admin_auth_fail')
+
+@socketio.on('admin_command')
+def on_admin_command(data):
+    """处理管理员指令"""
+    if data.get('password') != ADMIN_PASSWORD:
+        return
+
+    cmd = data.get('cmd')
+    
+    if cmd == 'reset':
+        # 立即重置游戏
+        global game_state, current_rule_pool
+        game_state["phase"] = "LOBBY"
+        game_state["round"] = 0
+        game_state["players"] = {}
+        game_state["rules"] = []
+        game_state["logs"] = []
+        game_state["new_rule"] = None
+        current_rule_pool = list(INITIAL_RULE_POOL)
+        broadcast_state()
+        
+    elif cmd == 'add_rule':
+        # 强制添加规则
+        rule_id = data.get('rule_id')
+        # 在当前池中查找该规则
+        rule_to_add = next((r for r in current_rule_pool if r["id"] == rule_id), None)
+        
+        if rule_to_add:
+            current_rule_pool.remove(rule_to_add) # 从池中移除
+            trigger_rule_event(rule_to_add) # 激活
+            # 强制进入公告阶段，让所有人看到
+            game_state["phase"] = "RULE_ANNOUNCEMENT"
+            game_state["timer"] = TIME_LIMIT_RULE
+            broadcast_state()
+            
+    elif cmd == 'refresh_pool':
+         emit('admin_pool_update', {'pool': current_rule_pool})
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
