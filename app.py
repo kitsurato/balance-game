@@ -1,58 +1,71 @@
+# --- 必须放在第一行！解决 Render/Gunicorn 部署报错的关键 ---
+import eventlet
+eventlet.monkey_patch()
+# -------------------------------------------------------
+
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 import time
 import threading
+import random
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 
-# 关键修复：允许跨域，不强制 async_mode，以便在 Render 上使用 eventlet
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- 管理员密码 ---
-ADMIN_PASSWORD = "admin110" 
+ADMIN_PASSWORD = "admin" 
 
 # --- 游戏配置 ---
 MAX_HP = 10
 TIME_LIMIT_ROUND = 30
 TIME_LIMIT_PREGAME = 60
-TIME_LIMIT_RULE = 20
+TIME_LIMIT_RULE = 5  # 修改：缩短为 5秒
 
 game_state = {
-    "phase": "LOBBY",  # LOBBY, PRE_GAME, INPUT, RESULT, RULE_ANNOUNCEMENT, END
+    "phase": "LOBBY", 
     "round": 0,
     "timer": 0,
     "players": {}, 
-    "rules": [],
-    "new_rule": None,
+    "rules": [],       # 永久生效的规则
+    "new_rule": None,  # 新增的永久规则（用于展示）
+    "round_event": None, # 本回合限定规则 (新增)
+    "multiplier": 0.8,   # 当前回合倍率 (新增)
     "logs": [],     
     "last_result": {} 
 }
 
 BASIC_RULES = [
     "每轮选取 0 至 100 之间的整数。",
-    "目标值为全员平均数的 0.8 倍。",
+    "目标值为全员平均数的 X 倍 (默认为 0.8)。",
     "最接近目标者获胜，其余玩家扣除 1 点生命。",
-    "玩家淘汰时，自动追加隐藏规则。"
+    "玩家淘汰时，追加永久规则；每回合可能触发随机限定规则。"
 ]
 
-# 初始规则库
-INITIAL_RULE_POOL = [
-    {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。"},
-    {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。"},
-    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。"},
-    {"id": 4, "desc": "【盲盒】本回合所有玩家无法看到自己的输入数值。"},
-    {"id": 5, "desc": "【狂暴】本回合所有扣血伤害 +1。"}
+# --- 规则库 ---
+
+# 1. 永久规则池 (有人淘汰时触发)
+PERMANENT_RULE_POOL = [
+    {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。", "type": "perm"},
+    {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。", "type": "perm"},
+    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。", "type": "perm"}
 ]
 
-current_rule_pool = list(INITIAL_RULE_POOL)
+# 2. 回合限定事件池 (每回合随机触发)
+ROUND_EVENT_POOL = [
+    {"id": 101, "desc": "【混乱】本回合所有人的数字将随机互换！", "type": "temp"},
+    {"id": 102, "desc": "【波动】本回合目标倍率发生突变！", "type": "temp"}
+]
+
+# 当前剩余的永久规则
+current_perm_pool = list(PERMANENT_RULE_POOL)
 timer_thread = None
 
 def background_timer():
-    """后台计时线程"""
     global timer_thread
     while True:
-        time.sleep(1)
+        eventlet.sleep(1)
         current_phase = game_state["phase"]
         
         if current_phase in ["PRE_GAME", "INPUT", "RULE_ANNOUNCEMENT"]:
@@ -63,7 +76,6 @@ def background_timer():
                 handle_timeout(current_phase)
 
 def handle_timeout(phase):
-    """倒计时结束自动流转"""
     if phase == "PRE_GAME":
         start_new_round()
     elif phase == "RULE_ANNOUNCEMENT":
@@ -75,28 +87,72 @@ def start_new_round():
     game_state["phase"] = "INPUT"
     game_state["round"] += 1
     game_state["timer"] = TIME_LIMIT_ROUND
-    # 重置玩家状态
+    
+    # --- 回合初始化逻辑 ---
+    # 1. 重置玩家提交状态
     for p in game_state["players"].values():
         p["submitted"] = False
         p["guess"] = None
+    
+    # 2. 重置回合参数
+    game_state["multiplier"] = 0.8
+    game_state["round_event"] = None
+
+    # 3. 随机触发回合限定规则 (30% 概率)
+    # 管理员也可以通过后台强制注入，所以这里判断一下是否已经有被注入的事件
+    if random.random() < 0.3: 
+        event = random.choice(ROUND_EVENT_POOL)
+        apply_round_event(event)
+    
+    broadcast_state()
+
+def apply_round_event(event):
+    """应用回合限定规则"""
+    game_state["round_event"] = event
+    
+    # 处理倍率波动逻辑
+    if event["id"] == 102:
+        # 生成 0.1 到 2.0 之间的随机数，步长 0.1
+        new_mult = round(random.randint(1, 20) * 0.1, 1)
+        game_state["multiplier"] = new_mult
+        event["desc"] = f"【波动】本回合目标倍率变更为 x{new_mult} !"
+
+def check_all_ready():
+    """检查是否所有人都准备好了"""
+    players = game_state["players"]
+    if len(players) < 3: return
+    
+    if all(p["ready"] for p in players.values()):
+        # 全员准备就绪，开始游戏
+        start_pre_game()
+
+def start_pre_game():
+    for p in game_state["players"].values():
+        p["confirmed"] = False # 重置规则确认状态
+    
+    game_state["phase"] = "PRE_GAME"
+    game_state["round"] = 0
+    game_state["timer"] = TIME_LIMIT_PREGAME
+    
+    global timer_thread
+    if not timer_thread:
+        timer_thread = threading.Thread(target=background_timer, daemon=True)
+        timer_thread.start()
     broadcast_state()
 
 def check_all_submitted():
-    """检查是否所有存活玩家已提交"""
     alive = [p for p in game_state["players"].values() if p["alive"]]
     if not alive: return
     if all(p["submitted"] for p in alive):
         calculate_round()
 
 def check_all_confirmed():
-    """检查是否所有存活玩家已确认规则"""
     alive = [p for p in game_state["players"].values() if p["alive"]]
     if not alive: return
     if all(p.get("confirmed", False) for p in alive):
         start_new_round()
 
 def calculate_round():
-    """核心结算逻辑"""
     players = game_state["players"]
     alive = [p for p in players.values() if p["alive"]]
     
@@ -105,36 +161,53 @@ def calculate_round():
         broadcast_state()
         return
 
-    # 收集数据
+    # 1. 收集原始数据
+    # guesses 结构: [{'player': Obj, 'val': 50, 'org_val': 50}]
     guesses = []
     for p in alive:
         val = p["guess"] if p["guess"] is not None else 0
-        guesses.append({"player": p, "val": val})
+        guesses.append({"player": p, "val": val, "org_val": val}) # org_val用于记录交换前的数字
     
+    log_msg = f"R{game_state['round']}"
+    
+    # --- 处理【混乱】事件 (数字交换) ---
+    if game_state["round_event"] and game_state["round_event"]["id"] == 101:
+        # 提取所有填写的数字
+        raw_values = [g["val"] for g in guesses]
+        # 打乱数字
+        random.shuffle(raw_values)
+        # 重新分配
+        for i, g in enumerate(guesses):
+            g["val"] = raw_values[i]
+        log_msg += " | ⚡数字已互换"
+
+    # 2. 计算平均值和目标值
     values = [g["val"] for g in guesses]
     avg = sum(values) / len(values) if values else 0
-    target = avg * 0.8
+    
+    # 使用动态倍率
+    current_mult = game_state["multiplier"]
+    target = avg * current_mult
+    
+    log_msg += f": 均值 {avg:.2f} x {current_mult} -> 目标 {target:.2f}"
     
     winners = []
     base_damage = 1
-    log_msg = f"R{game_state['round']}: 均值 {avg:.2f} -> 目标 {target:.2f}"
-    
     rule_ids = [r["id"] for r in game_state["rules"]]
 
-    # --- 规则处理 ---
-    if 5 in rule_ids: # 狂暴
-        base_damage += 1
-        log_msg += " | 狂暴(+1伤)"
-
+    # --- 永久规则判断 ---
+    
+    # 规则: 极值
     rule3_triggered = False
-    if 3 in rule_ids and 0 in values and 100 in values: # 极值
+    if 3 in rule_ids and 0 in values and 100 in values:
         winners = [g["player"] for g in guesses if g["val"] == 100]
         rule3_triggered = True
         log_msg += " | 极值触发(100胜)"
 
     if not rule3_triggered:
         candidates = guesses[:]
-        if 1 in rule_ids: # 冲突
+        # 规则: 冲突
+        if 1 in rule_ids:
             counts = {x: values.count(x) for x in values}
             conflict_vals = [v for v, c in counts.items() if c > 1]
             candidates = [g for g in guesses if counts[g['val']] == 1]
@@ -148,13 +221,17 @@ def calculate_round():
             min_diff = abs(candidates[0]['val'] - target)
             winners = [x['player'] for x in candidates if abs(x['val'] - target) == min_diff]
             
-            if 2 in rule_ids and min_diff < 1: # 精准
+            # 规则: 精准
+            if 2 in rule_ids and min_diff < 1:
                 base_damage = 2
                 log_msg += " | 精准打击(伤害x2)"
 
-    # 扣血与记录
+    # 3. 结算与记录
     round_details = []
     for p in alive:
+        # 找到该玩家对应的数据对象（可能被交换过数字）
+        player_guess_data = next(g for g in guesses if g['player'] == p)
+        
         is_winner = p in winners
         actual_dmg = 0
         if not is_winner:
@@ -166,22 +243,23 @@ def calculate_round():
         
         round_details.append({
             "name": p["name"],
-            "val": p["guess"] if p["guess"] is not None else 0,
+            "val": player_guess_data["val"],      # 实际参与计算的数字
+            "org_val": player_guess_data["org_val"], # 原本选择的数字(用于展示交换效果)
             "hp": p["hp"],
             "dmg": actual_dmg,
             "win": is_winner
         })
 
-    # 死亡与新规则触发
+    # 4. 死亡判定与新永久规则
     newly_dead = [p for p in players.values() if p["hp"] <= 0 and p["alive"]]
     game_state["new_rule"] = None 
 
     triggered_new_rule = False
     for p in newly_dead:
         p["alive"] = False
-        if current_rule_pool and not triggered_new_rule: 
-            new_rule = current_rule_pool.pop(0)
-            trigger_rule_event(new_rule, log_msg)
+        if current_perm_pool and not triggered_new_rule: 
+            new_rule = current_perm_pool.pop(0)
+            trigger_perm_rule(new_rule, log_msg)
             triggered_new_rule = True
 
     game_state["last_result"] = {
@@ -197,11 +275,11 @@ def calculate_round():
     
     threading.Timer(5, after_result_display, [triggered_new_rule]).start()
 
-def trigger_rule_event(new_rule, log_msg_append=""):
+def trigger_perm_rule(new_rule, log_msg_append=""):
     game_state["rules"].append(new_rule)
     game_state["new_rule"] = new_rule
     if log_msg_append:
-        log_msg_append += f" | ⚠新规则: {new_rule['desc']}"
+        log_msg_append += f" | ⚠永久规则: {new_rule['desc']}"
 
 def after_result_display(has_new_rule):
     alive_count = sum(1 for p in game_state["players"].values() if p["alive"])
@@ -234,31 +312,26 @@ def on_connect():
 def on_join(data):
     if game_state["phase"] != "LOBBY": return
     if len(game_state["players"]) >= 5: return
-    
     sid = request.sid
     name = data.get('name', f'Player {len(game_state["players"])+1}')
-    
     game_state["players"][sid] = {
         "name": name, "hp": MAX_HP, "alive": True,
-        "guess": None, "submitted": False, "confirmed": False,
+        "guess": None, "submitted": False, 
+        "confirmed": False, "ready": False, # 新增 ready 状态
         "last_dmg": 0, "is_winner": False
     }
     broadcast_state()
 
-@socketio.on('start_game')
-def on_start():
-    if len(game_state["players"]) < 3: return
-    for p in game_state["players"].values():
-        p["confirmed"] = False
-    game_state["phase"] = "PRE_GAME"
-    game_state["round"] = 0
-    game_state["timer"] = TIME_LIMIT_PREGAME
-    
-    global timer_thread
-    if not timer_thread:
-        timer_thread = threading.Thread(target=background_timer, daemon=True)
-        timer_thread.start()
-    broadcast_state()
+@socketio.on('toggle_ready')
+def on_toggle_ready():
+    """玩家切换准备状态"""
+    if game_state["phase"] != "LOBBY": return
+    sid = request.sid
+    if sid in game_state["players"]:
+        p = game_state["players"][sid]
+        p["ready"] = not p["ready"]
+        broadcast_state()
+        check_all_ready()
 
 @socketio.on('confirm_rule')
 def on_confirm_rule():
@@ -287,7 +360,8 @@ def on_submit(data):
 @socketio.on('admin_login')
 def on_admin_login(data):
     if data.get('password') == ADMIN_PASSWORD:
-        emit('admin_auth_success', {'pool': current_rule_pool})
+        # 管理员不仅可以看到永久规则池，也可以看到临时事件池
+        emit('admin_auth_success', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL})
     else:
         emit('admin_auth_fail')
 
@@ -297,28 +371,31 @@ def on_admin_command(data):
     cmd = data.get('cmd')
     
     if cmd == 'reset':
-        global game_state, current_rule_pool
+        global game_state, current_perm_pool
         game_state["phase"] = "LOBBY"
         game_state["round"] = 0
         game_state["players"] = {}
         game_state["rules"] = []
         game_state["logs"] = []
         game_state["new_rule"] = None
-        current_rule_pool = list(INITIAL_RULE_POOL)
+        game_state["round_event"] = None
+        game_state["multiplier"] = 0.8
+        current_perm_pool = list(PERMANENT_RULE_POOL)
         broadcast_state()
         
-    elif cmd == 'add_rule':
+    elif cmd == 'add_perm_rule':
+        # 强制激活永久规则
         rule_id = data.get('rule_id')
-        rule_to_add = next((r for r in current_rule_pool if r["id"] == rule_id), None)
+        rule_to_add = next((r for r in current_perm_pool if r["id"] == rule_id), None)
         if rule_to_add:
-            current_rule_pool.remove(rule_to_add)
-            trigger_rule_event(rule_to_add)
+            current_perm_pool.remove(rule_to_add)
+            trigger_perm_rule(rule_to_add)
             game_state["phase"] = "RULE_ANNOUNCEMENT"
             game_state["timer"] = TIME_LIMIT_RULE
             broadcast_state()
-            
+
     elif cmd == 'refresh_pool':
-         emit('admin_pool_update', {'pool': current_rule_pool})
+         emit('admin_pool_update', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL})
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5001)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5002)
