@@ -56,7 +56,7 @@
                         <div v-else class="space-y-6">
                             <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold">强制重置游戏</button>
                             <div>
-                                <h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Trigger Round Event</h3>
+                                <h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Trigger Event</h3>
                                 <div class="space-y-2">
                                     <div v-for="event in adminTempPool" :key="event.id" class="text-xs border rounded-lg p-2 bg-indigo-50 flex justify-between items-center gap-2">
                                         <span class="text-indigo-800 leading-tight flex-1">[[ event.desc ]]</span>
@@ -181,12 +181,47 @@
             </transition>
 
             <transition name="fade">
-                <div v-if="gameState.phase === 'END'" class="absolute inset-0 flex flex-col items-center justify-center glass rounded-2xl p-8 z-20">
-                    <div class="text-6xl mb-4 animate-bounce">👑</div>
-                    <h2 class="text-3xl font-black text-slate-800 mb-2">GAME OVER</h2>
-                    <p class="text-lg text-indigo-600 font-bold mb-8">Winner: [[ getWinnerName() ]]</p>
-                    <p class="text-xs text-slate-500 mb-2">NEW GAME IN</p><p class="text-4xl font-mono text-slate-800 mb-8">[[ timer ]]s</p>
-                    <button @click="resetGame" class="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold w-full shadow-lg">Reset Now</button>
+                <div v-if="gameState.phase === 'END'" class="absolute inset-0 flex flex-col items-center justify-start glass rounded-2xl z-20 overflow-hidden">
+                    <div class="w-full p-6 text-center shrink-0">
+                        <div class="text-6xl mb-2 animate-bounce">👑</div>
+                        <h2 class="text-2xl font-black text-slate-800">GAME OVER</h2>
+                        <p class="text-lg text-indigo-600 font-bold mb-2">Winner: [[ getWinnerName() ]]</p>
+                        <p class="text-xs text-slate-500">New Game in [[ timer ]]s</p>
+                        <button @click="resetGame" class="mt-2 bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg">Reset Now</button>
+                    </div>
+                    
+                    <div class="w-full flex-1 overflow-y-auto bg-white/50 p-4 border-t border-slate-200">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase mb-4 sticky top-0 bg-white/90 backdrop-blur py-2 text-center">Battle Log</h3>
+                        <div class="space-y-4 pb-4">
+                            <div v-for="round in gameState.full_history" :key="round.round_num" class="bg-white p-3 rounded-lg shadow-sm border border-slate-100">
+                                <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-50">
+                                    <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">R[[ round.round_num ]]</span>
+                                    <span class="text-[10px] text-slate-400 font-mono">Avg:[[ round.avg ]] → Target:[[ round.target ]]</span>
+                                </div>
+                                
+                                <div v-if="round.event_desc" class="mb-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded font-bold border border-amber-100">
+                                    ⚡ [[ round.event_desc ]]
+                                </div>
+                                <div v-if="round.active_rules && round.active_rules.length" class="mb-2 flex flex-wrap gap-1">
+                                    <span v-for="r in round.active_rules" class="text-[8px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">[[ r ]]</span>
+                                </div>
+
+                                <div class="space-y-1">
+                                    <div v-for="p in round.player_data" class="flex justify-between items-center text-[10px]">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold w-12 truncate" :class="p.win ? 'text-emerald-600' : 'text-slate-600'">[[ p.name ]]</span>
+                                            <span class="font-mono bg-slate-50 px-1 rounded text-slate-500">
+                                                [[ p.val ]] 
+                                                <span v-if="p.source && p.source !== p.name" class="text-[8px] text-indigo-400 ml-1">(←[[ p.source.substring(0,3) ]])</span>
+                                            </span>
+                                        </div>
+                                        <span v-if="p.win" class="font-bold text-emerald-500">WIN</span>
+                                        <span v-else class="font-bold text-red-400">-[[ p.dmg ]]</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </transition>
         </div>
@@ -196,11 +231,10 @@
                 <div class="flex justify-between items-center mb-2 px-1"><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Player Status</span></div>
                 <div class="grid grid-cols-4 gap-2 items-end">
                     <div v-for="p in playerList" :key="p.uid" class="flex flex-col items-center group w-full relative">
-                        <div class="relative w-full h-10 bg-slate-800 rounded overflow-hidden border border-slate-700 shadow-inner">
-                            <div v-if="gameState.blind_mode" class="absolute inset-0 z-20 bg-slate-800 flex items-center justify-center"><span class="text-white text-xs font-bold">?</span></div>
-                            
+                        <div v-if="gameState.blind_mode" class="relative w-full h-10 bg-slate-800 rounded border border-slate-700 flex items-center justify-center"><span class="text-white text-xs font-bold">?</span></div>
+                        <div v-else class="relative w-full h-10 bg-slate-800 rounded overflow-hidden border border-slate-700 shadow-inner">
                             <div class="absolute bottom-0 left-0 w-full hp-fill transition-all duration-700 ease-out" :class="getHpColor(p.hp)" :style="{ height: (p.hp * 10) + '%' }"></div>
-                            <div class="absolute inset-0 flex items-center justify-center z-10"><span class="text-lg font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">[[ p.hp ]]</span></div>
+                            <div class="absolute inset-0 flex items-center justify-center z-10"><span class="text-2xl font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">[[ p.hp ]]</span></div>
                         </div>
                         <div class="text-[8px] font-bold text-center text-slate-400 mt-1 truncate w-full">[[ p.name.substring(0, 4) ]]</div>
                     </div>
@@ -212,10 +246,8 @@
 
     <script>
         const { createApp, ref, computed } = Vue;
-        // 核心修复：强制 websocket，重连逻辑
         const socket = io({ transports: ['websocket'], upgrade: false, reconnection: true, reconnectionAttempts: 20 });
 
-        // --- UUID 生成器 ---
         function getOrCreateUID() {
             let uid = localStorage.getItem('bg_uid');
             if (!uid) {
@@ -228,22 +260,13 @@
 
         const app = createApp({
             setup() {
-                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false });
+                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [] });
                 const nickname = ref(localStorage.getItem('bg_name') || ''); 
                 const inputVal = ref(50); const timer = ref(0); const myGuess = ref(null); const basicRules = ref([]);
                 const showAdmin = ref(false); const adminPass = ref(''); const isAdminAuth = ref(false); const adminError = ref(false); const adminPermPool = ref([]); const adminTempPool = ref([]);
 
-                // 核心修复：连接时上报 UID
-                socket.on('connect', () => { 
-                    socket.emit('identify', { uid: myUid });
-                });
-                
-                // 页面可见性恢复时强制检查连接
-                document.addEventListener("visibilitychange", () => {
-                    if (!document.hidden && !socket.connected) {
-                        socket.connect();
-                    }
-                });
+                socket.on('connect', () => { socket.emit('identify', { uid: myUid }); });
+                document.addEventListener("visibilitychange", () => { if (!document.hidden && !socket.connected) socket.connect(); });
 
                 socket.on('init_config', (data) => { basicRules.value = data.basic_rules; });
                 socket.on('state_update', (data) => { gameState.value = data; timer.value = data.timer; });
@@ -254,18 +277,12 @@
 
                 const me = computed(() => gameState.value.players[myUid]);
                 const hasJoined = computed(() => !!gameState.value.players[myUid]);
-                
                 const playerList = computed(() => Object.entries(gameState.value.players).map(([uid, p]) => ({...p, uid})));
                 const sortedDetails = computed(() => { if (!gameState.value.last_result.details) return []; return [...gameState.value.last_result.details].sort((a, b) => b.hp - a.hp); });
                 const confirmedCount = computed(() => Object.values(gameState.value.players).filter(p => p.confirmed && p.alive).length);
                 const readyCount = computed(() => Object.values(gameState.value.players).filter(p => p.ready).length);
 
-                const joinGame = () => { 
-                    if(nickname.value) {
-                        localStorage.setItem('bg_name', nickname.value);
-                        socket.emit('join', { uid: myUid, name: nickname.value }); 
-                    }
-                };
+                const joinGame = () => { if(nickname.value) { localStorage.setItem('bg_name', nickname.value); socket.emit('join', { uid: myUid, name: nickname.value }); } };
                 const toggleReady = () => socket.emit('toggle_ready');
                 const confirmRule = () => socket.emit('confirm_rule');
                 const submitGuess = () => { myGuess.value = inputVal.value; socket.emit('submit_guess', { val: inputVal.value }); if(me.value) me.value.submitted = true; };

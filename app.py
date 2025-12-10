@@ -12,7 +12,7 @@ app.config['SECRET_KEY'] = 'secret!'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-ADMIN_PASSWORD = "110120119" 
+ADMIN_PASSWORD = "admin" 
 
 MAX_HP = 10
 MAX_PLAYERS = 8
@@ -21,15 +21,13 @@ TIME_LIMIT_PREGAME = 60
 TIME_LIMIT_RULE = 5
 TIME_LIMIT_GAMEOVER = 60 
 
-# --- 核心修复：ID 映射表 ---
-# 用于将易变的 socket_id 映射到固定的 user_id
 SID_TO_UID = {} 
 
 game_state = {
     "phase": "LOBBY", 
     "round": 0,
     "timer": 0,
-    "players": {}, # 注意：这里的 Key 现在是 uid (localStorage里的那个)，不再是 socket.id
+    "players": {}, 
     "rules": [],       
     "new_rule": None,  
     "round_event": None, 
@@ -37,7 +35,8 @@ game_state = {
     "dead_guesses": [],
     "blind_mode": False,
     "logs": [],     
-    "last_result": {} 
+    "last_result": {},
+    "full_history": [] # 新增：用于存储整局历史
 }
 
 BASIC_RULES = [
@@ -50,8 +49,8 @@ BASIC_RULES = [
 PERMANENT_RULE_POOL = [
     {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。", "type": "perm"},
     {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。", "type": "perm"},
-    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者本回合直接获胜。", "type": "perm"},
-    {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算。", "type": "perm"},
+    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。", "type": "perm"},
+    {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算(权重1)。", "type": "perm"},
     {"id": 5, "desc": "【绝境】HP < 3 的玩家，其数字对均值的权重变为 3 倍。", "type": "perm"}
 ]
 
@@ -59,14 +58,13 @@ ROUND_EVENT_POOL = [
     {"id": 101, "desc": "【混乱】本回合所有人的数字将随机互换！", "type": "temp"},
     {"id": 102, "desc": "【波动】本回合目标倍率发生突变！", "type": "temp"},
     {"id": 103, "desc": "【安全】本回合选择 40-60 之间数字的人，免除扣血！", "type": "temp"},
-    {"id": 104, "desc": "【黑暗】本回合隐藏所有人的 HP 和状态。", "type": "temp"}
+    {"id": 104, "desc": "【黑暗】黑暗森林！本回合隐藏所有人的 HP 和状态。", "type": "temp"}
 ]
 
 current_perm_pool = list(PERMANENT_RULE_POOL)
 timer_thread = None
 
 def get_player_by_sid(sid):
-    """辅助函数：通过 socket_id 获取玩家对象"""
     uid = SID_TO_UID.get(sid)
     if uid and uid in game_state["players"]:
         return game_state["players"][uid]
@@ -95,10 +93,9 @@ def handle_timeout(phase):
         perform_reset()
 
 def perform_reset():
-    global game_state, current_perm_pool, SID_TO_UID
+    global game_state, current_perm_pool
     game_state["phase"] = "LOBBY"
     game_state["round"] = 0
-    # 注意：重置时不清除 players 字典，只重置玩家状态，这样重连的人还在
     for p in game_state["players"].values():
         p["hp"] = MAX_HP
         p["alive"] = True
@@ -116,6 +113,7 @@ def perform_reset():
     game_state["multiplier"] = 0.8
     game_state["dead_guesses"] = []
     game_state["blind_mode"] = False
+    game_state["full_history"] = [] # 重置历史记录
     current_perm_pool = list(PERMANENT_RULE_POOL)
     broadcast_state()
 
@@ -132,7 +130,7 @@ def start_new_round():
     game_state["round_event"] = None
     game_state["blind_mode"] = False
 
-    if random.random() < 0.4: 
+    if random.random() < 0.3: 
         event = random.choice(ROUND_EVENT_POOL)
         apply_round_event(event)
     
@@ -150,7 +148,6 @@ def apply_round_event(event):
 
 def check_all_ready():
     players = game_state["players"]
-    # 统计在线且已准备的玩家
     ready_count = sum(1 for p in players.values() if p["ready"])
     if len(players) < 3: return
     if len(players) == ready_count:
@@ -280,6 +277,18 @@ def calculate_round():
             "win": is_winner
         })
 
+    # --- 记录本轮历史 ---
+    round_history = {
+        "round_num": game_state["round"],
+        "target": round(target, 2),
+        "avg": round(avg, 2),
+        "event_desc": game_state["round_event"]["desc"] if game_state["round_event"] else None,
+        "active_rules": [r["desc"] for r in game_state["rules"]],
+        "player_data": round_details
+    }
+    game_state["full_history"].append(round_history)
+    # ------------------
+
     newly_dead = [p for p in players.values() if p["hp"] <= 0 and p["alive"]]
     game_state["new_rule"] = None 
 
@@ -333,35 +342,25 @@ def index():
 
 @socketio.on('connect')
 def on_connect():
-    # 获取前端传来的 uid (如果不是新连接，SocketIO会自动带上 query params)
-    # 但由于 connect 时可能还没拿到 uid，我们主要依赖后续的 join 或 ping
     emit('state_update', game_state)
     emit('init_config', {'basic_rules': BASIC_RULES})
 
 @socketio.on('identify')
 def on_identify(data):
-    """核心修复：当用户连接时，立即绑定 UID 和 SID"""
     uid = data.get('uid')
     if uid:
         SID_TO_UID[request.sid] = uid
-        # 如果这个 uid 已经在游戏中，广播更新状态（如在线状态）
         if uid in game_state["players"]:
-            # 可以在这里做一些“用户回来了”的逻辑
             broadcast_state()
 
 @socketio.on('join')
 def on_join(data):
     uid = data.get('uid')
     if not uid: return
-    
-    # 建立映射
     SID_TO_UID[request.sid] = uid
-    
-    # 如果已经在游戏中（重连），直接返回
     if uid in game_state["players"]:
         broadcast_state()
         return
-
     if game_state["phase"] != "LOBBY": return
     if len(game_state["players"]) >= MAX_PLAYERS: return
     
