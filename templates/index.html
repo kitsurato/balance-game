@@ -12,9 +12,10 @@
     <style>
         body { 
             font-family: 'Inter', sans-serif; 
-            touch-action: manipulation;
+            touch-action: manipulation; /* 防止双击缩放 */
             -webkit-tap-highlight-color: transparent;
         }
+        /* dvh 解决手机浏览器地址栏遮挡 */
         .mobile-h-screen {
             height: 100vh;
             height: 100dvh;
@@ -69,39 +70,28 @@
                         <span class="font-bold">ADMIN PANEL</span>
                         <button @click="showAdmin = false" class="text-slate-400 hover:text-white">✕</button>
                     </div>
-                    
                     <div class="p-6 flex-1 overflow-y-auto">
                         <div v-if="!isAdminAuth" class="space-y-4">
-                            <p class="text-sm text-slate-500">请输入管理员密码</p>
+                            <p class="text-sm text-slate-500">管理员密码</p>
                             <input v-model="adminPass" type="password" class="w-full border p-3 rounded-lg text-center tracking-widest" placeholder="Password">
                             <button @click="adminLogin" class="w-full bg-slate-800 text-white p-3 rounded-lg font-bold">解锁</button>
                             <p v-if="adminError" class="text-red-500 text-xs text-center">密码错误</p>
                         </div>
-
                         <div v-else class="space-y-6">
                             <div>
                                 <h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Global Actions</h3>
-                                <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold hover:bg-red-600 hover:text-white transition">
-                                    立即重置游戏 (RESET)
-                                </button>
+                                <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold hover:bg-red-600 hover:text-white transition">强制重置游戏</button>
                             </div>
-
                             <div>
                                 <div class="flex justify-between items-center mb-2">
-                                    <h3 class="text-xs font-bold text-slate-400 uppercase">Available Rules</h3>
+                                    <h3 class="text-xs font-bold text-slate-400 uppercase">Inject Rules</h3>
                                     <button @click="refreshPool" class="text-xs text-indigo-500">刷新</button>
                                 </div>
-                                
-                                <div v-if="adminPool.length === 0" class="text-center text-xs text-slate-300 py-4 border border-dashed rounded">
-                                    规则池已空
-                                </div>
-
+                                <div v-if="adminPool.length === 0" class="text-center text-xs text-slate-300 py-4 border border-dashed rounded">规则池已空</div>
                                 <div class="space-y-2">
                                     <div v-for="rule in adminPool" :key="rule.id" class="text-xs border rounded-lg p-2 bg-slate-50 flex justify-between items-center gap-2">
                                         <span class="text-slate-600 leading-tight flex-1">[[ rule.desc ]]</span>
-                                        <button @click="adminAddRule(rule.id)" class="bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap hover:bg-emerald-500">
-                                            添加
-                                        </button>
+                                        <button @click="adminAddRule(rule.id)" class="bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap hover:bg-emerald-500">添加</button>
                                     </div>
                                 </div>
                             </div>
@@ -118,13 +108,12 @@
                     <div v-if="!mySessionId || !me" class="w-full">
                         <div class="mb-8 text-center">
                             <h2 class="text-xl font-bold mb-2">加入对局</h2>
-                            <p class="text-xs text-slate-500">请输入你的代号</p>
+                            <p class="text-xs text-slate-500">请输入代号</p>
                         </div>
                         <input v-model="nickname" @keyup.enter="joinGame" type="text" placeholder="NICKNAME" 
                             class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 focus:ring-2 ring-indigo-500 outline-none text-center text-lg font-bold uppercase placeholder-slate-300">
                         <button @click="joinGame" class="w-full bg-slate-900 text-white p-4 rounded-xl font-bold text-lg active:scale-95 transition">ENTER</button>
                     </div>
-
                     <div v-else class="w-full text-center flex flex-col h-full">
                         <h2 class="text-xl font-bold mb-4">等待玩家...</h2>
                         <div class="flex-1 overflow-y-auto space-y-2 mb-4">
@@ -148,14 +137,12 @@
                         </div>
                         <h2 class="text-xl font-bold">规则确认</h2>
                     </div>
-
                     <div class="flex-1 overflow-y-auto space-y-3 pr-2 mb-4">
                         <div v-for="(rule, idx) in basicRules" :key="idx" class="flex gap-3 text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-100 items-start">
                             <span class="font-bold text-indigo-500 mt-0.5">[[ idx + 1 ]]</span>
                             <span class="leading-tight">[[ rule ]]</span>
                         </div>
                     </div>
-
                     <div class="mt-auto pt-4 border-t border-slate-100">
                         <div class="flex justify-between items-center text-xs text-slate-400 mb-3 px-1">
                             <span>全员确认后立即开始</span>
@@ -271,7 +258,14 @@
 
     <script>
         const { createApp, ref, computed } = Vue;
-        const socket = io();
+        
+        // 关键配置：Render 必须强制使用 websocket 模式
+        const socket = io({
+            transports: ['websocket'],
+            upgrade: false,
+            reconnection: true,
+            reconnectionAttempts: 10
+        });
 
         const app = createApp({
             setup() {
@@ -303,18 +297,10 @@
                 socket.on('state_update', (data) => { gameState.value = data; timer.value = data.timer; });
                 socket.on('timer_update', (data) => { timer.value = data.timer; });
 
-                // Admin Listeners
-                socket.on('admin_auth_success', (data) => {
-                    isAdminAuth.value = true;
-                    adminError.value = false;
-                    adminPool.value = data.pool;
-                });
-                socket.on('admin_auth_fail', () => {
-                    adminError.value = true;
-                });
-                socket.on('admin_pool_update', (data) => {
-                    adminPool.value = data.pool;
-                });
+                // Admin Events
+                socket.on('admin_auth_success', (data) => { isAdminAuth.value = true; adminError.value = false; adminPool.value = data.pool; });
+                socket.on('admin_auth_fail', () => { adminError.value = true; });
+                socket.on('admin_pool_update', (data) => { adminPool.value = data.pool; });
 
                 const me = computed(() => gameState.value.players[mySessionId.value]);
                 const playerList = computed(() => Object.entries(gameState.value.players).map(([sid, p]) => ({...p, sid})));
@@ -332,45 +318,21 @@
                     socket.emit('submit_guess', { val: inputVal.value });
                     if(me.value) me.value.submitted = true; 
                 };
-                const resetGame = () => {
-                    socket.emit('reset_game');
-                    inputVal.value = 50;
-                    myGuess.value = null;
-                };
+                const resetGame = () => { socket.emit('reset_game'); inputVal.value = 50; myGuess.value = null; };
 
-                // Admin Methods
-                const adminLogin = () => {
-                    socket.emit('admin_login', { password: adminPass.value });
-                };
-                const adminReset = () => {
-                    if (confirm("确定要强制重置游戏吗？")) {
-                        socket.emit('admin_command', { password: adminPass.value, cmd: 'reset' });
-                        showAdmin.value = false;
-                    }
-                };
-                const adminAddRule = (id) => {
-                    if (confirm("确定要立即激活此规则吗？")) {
-                        socket.emit('admin_command', { password: adminPass.value, cmd: 'add_rule', rule_id: id });
-                        // 乐观更新，避免等待
-                        adminPool.value = adminPool.value.filter(r => r.id !== id);
-                    }
-                };
-                const refreshPool = () => {
-                    socket.emit('admin_command', { password: adminPass.value, cmd: 'refresh_pool' });
-                }
+                // Admin Functions
+                const adminLogin = () => socket.emit('admin_login', { password: adminPass.value });
+                const adminReset = () => { if (confirm("强制重置？")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'reset' }); showAdmin.value = false; } };
+                const adminAddRule = (id) => { if (confirm("激活规则？")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_rule', rule_id: id }); } };
+                const refreshPool = () => socket.emit('admin_command', { password: adminPass.value, cmd: 'refresh_pool' });
 
                 const getHpColor = (hp) => hp > 5 ? 'bg-emerald-500' : (hp > 2 ? 'bg-amber-400' : 'bg-red-500');
-                const getWinnerName = () => {
-                    const survivor = Object.values(gameState.value.players).find(p => p.alive);
-                    return survivor ? survivor.name : 'Nobody';
-                };
+                const getWinnerName = () => { const s = Object.values(gameState.value.players).find(p => p.alive); return s ? s.name : 'Nobody'; };
 
                 return {
                     gameState, nickname, inputVal, timer, mySessionId, basicRules,
                     me, playerList, sortedDetails, myGuess, confirmedCount,
-                    // Admin Vars
                     showAdmin, adminPass, isAdminAuth, adminError, adminPool,
-                    // Actions
                     joinGame, startGame, confirmRule, submitGuess, resetGame,
                     adminLogin, adminReset, adminAddRule, refreshPool,
                     getHpColor, getWinnerName

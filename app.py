@@ -5,10 +5,12 @@ import threading
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# --- 管理员配置 ---
-ADMIN_PASSWORD = "admin"  # 这里设置你的管理员密码
+# 关键修复：允许跨域，不强制 async_mode，以便在 Render 上使用 eventlet
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# --- 管理员密码 ---
+ADMIN_PASSWORD = "admin110" 
 
 # --- 游戏配置 ---
 MAX_HP = 10
@@ -17,7 +19,7 @@ TIME_LIMIT_PREGAME = 60
 TIME_LIMIT_RULE = 20
 
 game_state = {
-    "phase": "LOBBY",
+    "phase": "LOBBY",  # LOBBY, PRE_GAME, INPUT, RESULT, RULE_ANNOUNCEMENT, END
     "round": 0,
     "timer": 0,
     "players": {}, 
@@ -34,7 +36,7 @@ BASIC_RULES = [
     "玩家淘汰时，自动追加隐藏规则。"
 ]
 
-# 初始规则库备份，用于重置
+# 初始规则库
 INITIAL_RULE_POOL = [
     {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。"},
     {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。"},
@@ -43,12 +45,11 @@ INITIAL_RULE_POOL = [
     {"id": 5, "desc": "【狂暴】本回合所有扣血伤害 +1。"}
 ]
 
-# 当前剩余的规则池
 current_rule_pool = list(INITIAL_RULE_POOL)
-
 timer_thread = None
 
 def background_timer():
+    """后台计时线程"""
     global timer_thread
     while True:
         time.sleep(1)
@@ -62,6 +63,7 @@ def background_timer():
                 handle_timeout(current_phase)
 
 def handle_timeout(phase):
+    """倒计时结束自动流转"""
     if phase == "PRE_GAME":
         start_new_round()
     elif phase == "RULE_ANNOUNCEMENT":
@@ -73,24 +75,28 @@ def start_new_round():
     game_state["phase"] = "INPUT"
     game_state["round"] += 1
     game_state["timer"] = TIME_LIMIT_ROUND
+    # 重置玩家状态
     for p in game_state["players"].values():
         p["submitted"] = False
         p["guess"] = None
     broadcast_state()
 
 def check_all_submitted():
+    """检查是否所有存活玩家已提交"""
     alive = [p for p in game_state["players"].values() if p["alive"]]
     if not alive: return
     if all(p["submitted"] for p in alive):
         calculate_round()
 
 def check_all_confirmed():
+    """检查是否所有存活玩家已确认规则"""
     alive = [p for p in game_state["players"].values() if p["alive"]]
     if not alive: return
     if all(p.get("confirmed", False) for p in alive):
         start_new_round()
 
 def calculate_round():
+    """核心结算逻辑"""
     players = game_state["players"]
     alive = [p for p in players.values() if p["alive"]]
     
@@ -99,6 +105,7 @@ def calculate_round():
         broadcast_state()
         return
 
+    # 收集数据
     guesses = []
     for p in alive:
         val = p["guess"] if p["guess"] is not None else 0
@@ -114,21 +121,20 @@ def calculate_round():
     
     rule_ids = [r["id"] for r in game_state["rules"]]
 
-    # 规则: 狂暴
-    if 5 in rule_ids:
+    # --- 规则处理 ---
+    if 5 in rule_ids: # 狂暴
         base_damage += 1
         log_msg += " | 狂暴(+1伤)"
 
-    # 规则: 极值
     rule3_triggered = False
-    if 3 in rule_ids and 0 in values and 100 in values:
+    if 3 in rule_ids and 0 in values and 100 in values: # 极值
         winners = [g["player"] for g in guesses if g["val"] == 100]
         rule3_triggered = True
         log_msg += " | 极值触发(100胜)"
 
     if not rule3_triggered:
         candidates = guesses[:]
-        if 1 in rule_ids:
+        if 1 in rule_ids: # 冲突
             counts = {x: values.count(x) for x in values}
             conflict_vals = [v for v, c in counts.items() if c > 1]
             candidates = [g for g in guesses if counts[g['val']] == 1]
@@ -142,10 +148,11 @@ def calculate_round():
             min_diff = abs(candidates[0]['val'] - target)
             winners = [x['player'] for x in candidates if abs(x['val'] - target) == min_diff]
             
-            if 2 in rule_ids and min_diff < 1:
+            if 2 in rule_ids and min_diff < 1: # 精准
                 base_damage = 2
                 log_msg += " | 精准打击(伤害x2)"
 
+    # 扣血与记录
     round_details = []
     for p in alive:
         is_winner = p in winners
@@ -165,14 +172,13 @@ def calculate_round():
             "win": is_winner
         })
 
-    # 处理死亡与自动规则触发
+    # 死亡与新规则触发
     newly_dead = [p for p in players.values() if p["hp"] <= 0 and p["alive"]]
     game_state["new_rule"] = None 
 
     triggered_new_rule = False
     for p in newly_dead:
         p["alive"] = False
-        # 仅当还有规则且本轮未触发过时触发
         if current_rule_pool and not triggered_new_rule: 
             new_rule = current_rule_pool.pop(0)
             trigger_rule_event(new_rule, log_msg)
@@ -192,7 +198,6 @@ def calculate_round():
     threading.Timer(5, after_result_display, [triggered_new_rule]).start()
 
 def trigger_rule_event(new_rule, log_msg_append=""):
-    """激活新规则并触发公告"""
     game_state["rules"].append(new_rule)
     game_state["new_rule"] = new_rule
     if log_msg_append:
@@ -214,12 +219,12 @@ def after_result_display(has_new_rule):
 def broadcast_state():
     socketio.emit('state_update', game_state)
 
-# --- 路由与事件 ---
-
+# --- 路由 ---
 @app.route('/')
 def index():
     return render_template('index.html')
 
+# --- Socket 事件 ---
 @socketio.on('connect')
 def on_connect():
     emit('state_update', game_state)
@@ -278,27 +283,20 @@ def on_submit(data):
             check_all_submitted()
     except: pass
 
-# --- 管理员相关事件 ---
-
+# --- 管理员事件 ---
 @socketio.on('admin_login')
 def on_admin_login(data):
-    """管理员登录验证"""
     if data.get('password') == ADMIN_PASSWORD:
-        # 登录成功，发送当前的规则池给管理员
         emit('admin_auth_success', {'pool': current_rule_pool})
     else:
         emit('admin_auth_fail')
 
 @socketio.on('admin_command')
 def on_admin_command(data):
-    """处理管理员指令"""
-    if data.get('password') != ADMIN_PASSWORD:
-        return
-
+    if data.get('password') != ADMIN_PASSWORD: return
     cmd = data.get('cmd')
     
     if cmd == 'reset':
-        # 立即重置游戏
         global game_state, current_rule_pool
         game_state["phase"] = "LOBBY"
         game_state["round"] = 0
@@ -310,15 +308,11 @@ def on_admin_command(data):
         broadcast_state()
         
     elif cmd == 'add_rule':
-        # 强制添加规则
         rule_id = data.get('rule_id')
-        # 在当前池中查找该规则
         rule_to_add = next((r for r in current_rule_pool if r["id"] == rule_id), None)
-        
         if rule_to_add:
-            current_rule_pool.remove(rule_to_add) # 从池中移除
-            trigger_rule_event(rule_to_add) # 激活
-            # 强制进入公告阶段，让所有人看到
+            current_rule_pool.remove(rule_to_add)
+            trigger_rule_event(rule_to_add)
             game_state["phase"] = "RULE_ANNOUNCEMENT"
             game_state["timer"] = TIME_LIMIT_RULE
             broadcast_state()
@@ -327,4 +321,4 @@ def on_admin_command(data):
          emit('admin_pool_update', {'pool': current_rule_pool})
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5001)
