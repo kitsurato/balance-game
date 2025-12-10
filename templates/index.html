@@ -54,7 +54,7 @@
                             <p v-if="adminError" class="text-red-500 text-xs text-center">密码错误</p>
                         </div>
                         <div v-else class="space-y-6">
-                            <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold">强制重置游戏</button>
+                            <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold">强制重置游戏 (清空所有人)</button>
                             <div>
                                 <h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Trigger Event</h3>
                                 <div class="space-y-2">
@@ -97,7 +97,13 @@
                             </div>
                         </div>
                         <p class="text-xs text-slate-400 mb-4">[[ readyCount ]] / [[ playerList.length ]] READY (需≥3人)</p>
-                        <button @click="toggleReady" :class="me && me.ready ? 'bg-emerald-500' : 'bg-slate-300'" class="w-full text-white p-4 rounded-xl font-bold shadow-lg transition active:scale-95">[[ me && me.ready ? '已准备' : '点击准备' ]]</button>
+                        
+                        <div class="flex gap-2 w-full">
+                            <button @click="leaveGame" class="flex-1 bg-red-100 text-red-600 p-4 rounded-xl font-bold shadow-lg transition active:scale-95">退出</button>
+                            <button @click="toggleReady" :class="me && me.ready ? 'bg-emerald-500 text-white' : 'bg-slate-300 text-white'" class="flex-[2] p-4 rounded-xl font-bold shadow-lg transition active:scale-95">
+                                [[ me && me.ready ? '已准备' : '准备' ]]
+                            </button>
+                        </div>
                     </div>
                 </div>
             </transition>
@@ -198,22 +204,15 @@
                                     <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">R[[ round.round_num ]]</span>
                                     <span class="text-[10px] text-slate-400 font-mono">Avg:[[ round.avg ]] → Target:[[ round.target ]]</span>
                                 </div>
-                                
-                                <div v-if="round.event_desc" class="mb-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded font-bold border border-amber-100">
-                                    ⚡ [[ round.event_desc ]]
-                                </div>
+                                <div v-if="round.event_desc" class="mb-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded font-bold border border-amber-100">⚡ [[ round.event_desc ]]</div>
                                 <div v-if="round.active_rules && round.active_rules.length" class="mb-2 flex flex-wrap gap-1">
                                     <span v-for="r in round.active_rules" class="text-[8px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">[[ r ]]</span>
                                 </div>
-
                                 <div class="space-y-1">
                                     <div v-for="p in round.player_data" class="flex justify-between items-center text-[10px]">
                                         <div class="flex items-center gap-2">
                                             <span class="font-bold w-12 truncate" :class="p.win ? 'text-emerald-600' : 'text-slate-600'">[[ p.name ]]</span>
-                                            <span class="font-mono bg-slate-50 px-1 rounded text-slate-500">
-                                                [[ p.val ]] 
-                                                <span v-if="p.source && p.source !== p.name" class="text-[8px] text-indigo-400 ml-1">(←[[ p.source.substring(0,3) ]])</span>
-                                            </span>
+                                            <span class="font-mono bg-slate-50 px-1 rounded text-slate-500">[[ p.val ]] <span v-if="p.source && p.source !== p.name" class="text-[8px] text-indigo-400 ml-1">(←[[ p.source.substring(0,3) ]])</span></span>
                                         </div>
                                         <span v-if="p.win" class="font-bold text-emerald-500">WIN</span>
                                         <span v-else class="font-bold text-red-400">-[[ p.dmg ]]</span>
@@ -283,6 +282,7 @@
                 const readyCount = computed(() => Object.values(gameState.value.players).filter(p => p.ready).length);
 
                 const joinGame = () => { if(nickname.value) { localStorage.setItem('bg_name', nickname.value); socket.emit('join', { uid: myUid, name: nickname.value }); } };
+                const leaveGame = () => { socket.emit('leave_game', { uid: myUid }); };
                 const toggleReady = () => socket.emit('toggle_ready');
                 const confirmRule = () => socket.emit('confirm_rule');
                 const submitGuess = () => { myGuess.value = inputVal.value; socket.emit('submit_guess', { val: inputVal.value }); if(me.value) me.value.submitted = true; };
@@ -301,7 +301,7 @@
                     gameState, nickname, inputVal, timer, myUid, basicRules,
                     me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount,
                     showAdmin, adminPass, isAdminAuth, adminError, adminPermPool, adminTempPool,
-                    joinGame, toggleReady, confirmRule, submitGuess, resetGame,
+                    joinGame, leaveGame, toggleReady, confirmRule, submitGuess, resetGame,
                     adminLogin, adminReset, adminAddPermRule, adminAddTempRule, refreshPool,
                     getHpColor, getWinnerName
                 }

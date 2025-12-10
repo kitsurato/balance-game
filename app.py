@@ -12,7 +12,7 @@ app.config['SECRET_KEY'] = 'secret!'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-ADMIN_PASSWORD = "admin" 
+ADMIN_PASSWORD = "110120119" 
 
 MAX_HP = 10
 MAX_PLAYERS = 8
@@ -21,6 +21,7 @@ TIME_LIMIT_PREGAME = 60
 TIME_LIMIT_RULE = 5
 TIME_LIMIT_GAMEOVER = 60 
 
+# 用户 ID 映射表
 SID_TO_UID = {} 
 
 game_state = {
@@ -36,7 +37,7 @@ game_state = {
     "blind_mode": False,
     "logs": [],     
     "last_result": {},
-    "full_history": [] # 新增：用于存储整局历史
+    "full_history": []
 }
 
 BASIC_RULES = [
@@ -49,8 +50,8 @@ BASIC_RULES = [
 PERMANENT_RULE_POOL = [
     {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。", "type": "perm"},
     {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。", "type": "perm"},
-    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。", "type": "perm"},
-    {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算(权重1)。", "type": "perm"},
+    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者本回合直接获胜。", "type": "perm"},
+    {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算。", "type": "perm"},
     {"id": 5, "desc": "【绝境】HP < 3 的玩家，其数字对均值的权重变为 3 倍。", "type": "perm"}
 ]
 
@@ -58,7 +59,7 @@ ROUND_EVENT_POOL = [
     {"id": 101, "desc": "【混乱】本回合所有人的数字将随机互换！", "type": "temp"},
     {"id": 102, "desc": "【波动】本回合目标倍率发生突变！", "type": "temp"},
     {"id": 103, "desc": "【安全】本回合选择 40-60 之间数字的人，免除扣血！", "type": "temp"},
-    {"id": 104, "desc": "【黑暗】黑暗森林！本回合隐藏所有人的 HP 和状态。", "type": "temp"}
+    {"id": 104, "desc": "【黑暗】本回合隐藏所有人的 HP 和状态。", "type": "temp"}
 ]
 
 current_perm_pool = list(PERMANENT_RULE_POOL)
@@ -93,19 +94,15 @@ def handle_timeout(phase):
         perform_reset()
 
 def perform_reset():
-    global game_state, current_perm_pool
+    """执行重置：清空所有玩家，回到初始状态"""
+    global game_state, current_perm_pool, SID_TO_UID
+    
+    # 核心修改：重置时清空玩家列表和ID映射
+    game_state["players"] = {} 
+    SID_TO_UID = {} 
+    
     game_state["phase"] = "LOBBY"
     game_state["round"] = 0
-    for p in game_state["players"].values():
-        p["hp"] = MAX_HP
-        p["alive"] = True
-        p["guess"] = None
-        p["submitted"] = False
-        p["confirmed"] = False
-        p["ready"] = False
-        p["last_dmg"] = 0
-        p["is_winner"] = False
-    
     game_state["rules"] = []
     game_state["logs"] = []
     game_state["new_rule"] = None
@@ -113,7 +110,7 @@ def perform_reset():
     game_state["multiplier"] = 0.8
     game_state["dead_guesses"] = []
     game_state["blind_mode"] = False
-    game_state["full_history"] = [] # 重置历史记录
+    game_state["full_history"] = []
     current_perm_pool = list(PERMANENT_RULE_POOL)
     broadcast_state()
 
@@ -130,7 +127,7 @@ def start_new_round():
     game_state["round_event"] = None
     game_state["blind_mode"] = False
 
-    if random.random() < 0.3: 
+    if random.random() < 0.4: 
         event = random.choice(ROUND_EVENT_POOL)
         apply_round_event(event)
     
@@ -207,6 +204,7 @@ def calculate_round():
     total_val = 0
     total_w = 0
     values = [] 
+    
     for g in guesses:
         values.append(g['val'])
         w = 3 if (5 in rule_ids and g['player']['hp'] < 3) else 1
@@ -277,7 +275,6 @@ def calculate_round():
             "win": is_winner
         })
 
-    # --- 记录本轮历史 ---
     round_history = {
         "round_num": game_state["round"],
         "target": round(target, 2),
@@ -287,7 +284,6 @@ def calculate_round():
         "player_data": round_details
     }
     game_state["full_history"].append(round_history)
-    # ------------------
 
     newly_dead = [p for p in players.values() if p["hp"] <= 0 and p["alive"]]
     game_state["new_rule"] = None 
@@ -358,9 +354,11 @@ def on_join(data):
     uid = data.get('uid')
     if not uid: return
     SID_TO_UID[request.sid] = uid
+    
     if uid in game_state["players"]:
         broadcast_state()
         return
+
     if game_state["phase"] != "LOBBY": return
     if len(game_state["players"]) >= MAX_PLAYERS: return
     
@@ -372,6 +370,18 @@ def on_join(data):
         "last_dmg": 0, "is_winner": False
     }
     broadcast_state()
+
+# --- 新增：玩家主动离开 ---
+@socketio.on('leave_game')
+def on_leave(data):
+    uid = data.get('uid')
+    if uid and uid in game_state["players"]:
+        del game_state["players"][uid]
+        # 清理该UID对应的旧socket记录（可选，为了严谨）
+        keys_to_remove = [k for k,v in SID_TO_UID.items() if v == uid]
+        for k in keys_to_remove:
+            del SID_TO_UID[k]
+        broadcast_state()
 
 @socketio.on('toggle_ready')
 def on_toggle_ready():
@@ -435,4 +445,4 @@ def on_admin_command(data):
          emit('admin_pool_update', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL})
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5003)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5002)
