@@ -12,7 +12,7 @@ app.config['SECRET_KEY'] = 'secret!'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-ADMIN_PASSWORD = "admin" 
+ADMIN_PASSWORD = "110120119" 
 
 MAX_HP = 10
 MAX_PLAYERS = 8
@@ -37,7 +37,6 @@ game_state = {
     "logs": [],     
     "last_result": {},
     "full_history": [],
-    # 新增配置字段
     "config": {
         "max_likes": 10
     }
@@ -56,14 +55,17 @@ PERMANENT_RULE_POOL = [
     {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。", "type": "perm"},
     {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。", "type": "perm"},
     {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算(权重1)。", "type": "perm"},
-    {"id": 5, "desc": "【绝境】HP < 3 的玩家，其数字对均值的权重变为 3 倍。", "type": "perm"}
+    {"id": 5, "desc": "【绝境】HP < 3 的玩家，其数字对均值的权重变为 3 倍。", "type": "perm"},
+    {"id": 6, "desc": "【通缉】HP 最高者若未获胜，额外扣 1 血。", "type": "perm"}
 ]
 
 ROUND_EVENT_POOL = [
-    {"id": 101, "desc": "【混乱】与他人交换所选数字！", "type": "temp"},
+    {"id": 101, "desc": "【混乱】决战时刻！两人互换数字！", "type": "temp"},
     {"id": 102, "desc": "【波动】本回合目标倍率发生突变！", "type": "temp"},
     {"id": 103, "desc": "【安全】选 40-60 免伤，且本回合胜者 +1 HP！", "type": "temp"},
-    {"id": 104, "desc": "【黑暗】隐藏全员 HP，且无法看到自己选择的数字！", "type": "temp"}
+    {"id": 104, "desc": "【黑暗】隐藏全员 HP，且无法看到自己选择的数字！", "type": "temp"},
+    {"id": 105, "desc": "【革命】逻辑反转！目标值变为：100 - (均值 x 倍率)！", "type": "temp"},
+    {"id": 106, "desc": "【赌徒】幸运尾数！命中幸运数字的人 +1 HP！", "type": "temp"}
 ]
 
 current_perm_pool = list(PERMANENT_RULE_POOL)
@@ -99,9 +101,7 @@ def handle_timeout(phase):
 
 def perform_reset():
     global game_state, current_perm_pool, SID_TO_UID
-    # 保持当前的配置设定 (如max_likes)，不重置为默认
     current_config = game_state["config"]
-    
     game_state["players"] = {} 
     SID_TO_UID = {} 
     game_state["phase"] = "LOBBY"
@@ -114,8 +114,7 @@ def perform_reset():
     game_state["dead_guesses"] = []
     game_state["blind_mode"] = False
     game_state["full_history"] = []
-    game_state["config"] = current_config # 保持配置
-    
+    game_state["config"] = current_config
     current_perm_pool = list(PERMANENT_RULE_POOL)
     broadcast_state()
 
@@ -134,10 +133,12 @@ def start_new_round():
 
     alive_count = sum(1 for p in game_state["players"].values() if p["alive"])
     
+    # 2人时 70% 概率触发混乱
     if alive_count == 2 and random.random() < 0.7:
         chaos_event = next(e for e in ROUND_EVENT_POOL if e["id"] == 101)
         apply_round_event(chaos_event)
-    elif random.random() < 0.4:
+    # 常规 30% 概率，排除混乱
+    elif random.random() < 0.3:
         other_events = [e for e in ROUND_EVENT_POOL if e["id"] != 101]
         if other_events:
             event = random.choice(other_events)
@@ -148,12 +149,17 @@ def start_new_round():
 def apply_round_event(event):
     event_copy = event.copy()
     game_state["round_event"] = event_copy
-    if event_copy["id"] == 102:
+    
+    if event_copy["id"] == 102: # 波动
         new_mult = round(random.randint(1, 20) * 0.1, 1)
         game_state["multiplier"] = new_mult
         event_copy["desc"] = f"【波动】本回合目标倍率变更为 x{new_mult} !"
-    elif event_copy["id"] == 104:
+    elif event_copy["id"] == 104: # 黑暗
         game_state["blind_mode"] = True
+    elif event_copy["id"] == 106: # 赌徒 (随机生成 0-9)
+        lucky_digit = random.randint(0, 9)
+        event_copy["lucky_digit"] = lucky_digit 
+        event_copy["desc"] = f"【赌徒】幸运尾数 {lucky_digit}！选择以 {lucky_digit} 结尾数字的人，回合后 +1 HP！"
 
 def check_all_ready():
     players = game_state["players"]
@@ -205,6 +211,7 @@ def calculate_round():
     
     log_msg = f"R{game_state['round']}"
     
+    # 混乱交换 (错排)
     if game_state["round_event"] and game_state["round_event"]["id"] == 101 and len(guesses) > 1:
         indices = list(range(len(guesses)))
         is_fixed_point = True
@@ -244,13 +251,19 @@ def calculate_round():
 
     avg = total_val / total_w if total_w else 0
     current_mult = game_state["multiplier"]
-    target = avg * current_mult
     
-    log_msg += f": 均值 {avg:.2f} x {current_mult} -> 目标 {target:.2f}"
+    # 革命：目标值反转
+    if game_state["round_event"] and game_state["round_event"]["id"] == 105:
+        target = 100 - (avg * current_mult)
+        log_msg += f": 革命! 100 - ({avg:.2f} x {current_mult}) -> 目标 {target:.2f}"
+    else:
+        target = avg * current_mult
+        log_msg += f": 均值 {avg:.2f} x {current_mult} -> 目标 {target:.2f}"
     
     winners = []
     base_damage = 1
 
+    # 极值判定
     rule3_triggered = False
     if 3 in active_rule_ids and 0 in values and 100 in values:
         winners = [g["player"] for g in guesses if g["val"] == 100]
@@ -276,6 +289,11 @@ def calculate_round():
                 base_damage = 2
                 log_msg += " | 精准"
 
+    # 通缉：计算最高 HP
+    max_hp_val = -999
+    if 6 in active_rule_ids and alive:
+        max_hp_val = max(p['hp'] for p in alive)
+
     round_details = []
     for p in alive:
         player_guess_data = next(g for g in guesses if g['player'] == p)
@@ -290,8 +308,19 @@ def calculate_round():
             if game_state["round_event"] and game_state["round_event"]["id"] == 103:
                 if 40 <= player_guess_data["val"] <= 60:
                     actual_dmg = 0
+            
+            # 通缉：最高血量惩罚
+            if 6 in active_rule_ids and p['hp'] == max_hp_val:
+                actual_dmg += 1
+                
             p["hp"] -= actual_dmg
         
+        # 赌徒：幸运数字回血
+        if game_state["round_event"] and game_state["round_event"]["id"] == 106:
+            lucky = game_state["round_event"].get("lucky_digit")
+            if lucky is not None and player_guess_data["val"] % 10 == lucky:
+                p["hp"] = min(MAX_HP, p["hp"] + 1)
+
         p["last_dmg"] = actual_dmg
         p["is_winner"] = is_winner
         
@@ -446,7 +475,6 @@ def on_send_like(data):
     if sender_uid and target_uid and sender_uid in game_state["players"] and target_uid in game_state["players"]:
         sender = game_state["players"][sender_uid]
         target = game_state["players"][target_uid]
-        # 使用动态配置检查
         limit = game_state["config"].get("max_likes", 10)
         if sender["likes_sent"] < limit:
             sender["likes_sent"] += 1

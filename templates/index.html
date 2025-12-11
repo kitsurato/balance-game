@@ -25,13 +25,11 @@
         
         .blind-mode { filter: grayscale(100%) blur(4px); pointer-events: none; }
         
-        /* 表情动画 */
         .emote-pop-enter-active { animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .emote-pop-leave-active { transition: all 0.5s ease-out; }
         .emote-pop-leave-to { opacity: 0; transform: translateY(-30px) scale(0.8); }
         @keyframes pop-in { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 1; } }
         
-        /* 🐷 气泡动画 */
         @keyframes floatPig {
             0% { transform: translateY(20px) scale(0.5); opacity: 0; }
             15% { opacity: 1; transform: translateY(0px) scale(1); }
@@ -301,7 +299,7 @@
 
         const app = createApp({
             setup() {
-                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [], config: { max_likes: 10 } });
+                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [] });
                 const nickname = ref(localStorage.getItem('bg_name') || ''); 
                 const inputVal = ref(50); const timer = ref(0); const myGuess = ref(null); const basicRules = ref([]);
                 const showAdmin = ref(false); const adminPass = ref(''); const isAdminAuth = ref(false); const adminError = ref(false); const adminPermPool = ref([]); const adminTempPool = ref([]);
@@ -392,7 +390,7 @@
                     showAdmin, adminPass, isAdminAuth, adminError, adminPermPool, adminTempPool, adminSettings,
                     joinGame, leaveGame, sendEmote, promptCustomEmote, sendLike,
                     toggleReady, confirmRule, submitGuess, resetGame,
-                    adminLogin, adminReset, adminAddPermRule, adminAddTempRule, updateSettings, refreshPool,
+                    adminLogin, adminReset, adminAddPermRule, adminAddTempRule, refreshPool,
                     getHpColor, getWinnerName
                 }
             }
