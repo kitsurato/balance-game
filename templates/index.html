@@ -15,23 +15,44 @@
         
         .fade-enter-active, .fade-leave-active { transition: opacity 0.5s ease; }
         .fade-enter-from, .fade-leave-to { opacity: 0; }
+        
         .hp-fill-v { transition: height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 0 10px rgba(255,255,255,0.3) inset; }
-        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07); }
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07); position: relative; }
         .hazard-stripe { background: repeating-linear-gradient(45deg, #fcd34d, #fcd34d 10px, #000 10px, #000 20px); }
+        
         input[type=range] { touch-action: none; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 28px; width: 28px; background: #1e293b; border-radius: 50%; margin-top: -12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        
         .blind-mode { filter: grayscale(100%) blur(4px); pointer-events: none; }
         
-        /* 优化后的表情动画：弹出 + 上浮淡出 */
+        /* 表情动画 */
         .emote-pop-enter-active { animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .emote-pop-leave-active { transition: all 0.5s ease-out; }
-        .emote-pop-leave-to { opacity: 0; transform: translateY(-20px) scale(1.1); }
+        .emote-pop-leave-to { opacity: 0; transform: translateY(-30px) scale(0.8); }
+        @keyframes pop-in { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 1; } }
         
-        @keyframes pop-in {
-            0% { transform: scale(0); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
+        /* 🐷 气泡动画 */
+        @keyframes floatPig {
+            0% { transform: translateY(20px) scale(0.5); opacity: 0; }
+            15% { opacity: 1; transform: translateY(0px) scale(1); }
+            80% { opacity: 0.9; }
+            100% { transform: translateY(-100px) scale(1.1); opacity: 0; }
         }
-        
+        .pig-particle {
+            position: absolute;
+            bottom: 0;
+            animation: floatPig 2.5s ease-out forwards;
+            pointer-events: none; 
+            z-index: 50; 
+            font-size: 20px;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
+        }
+
+        .text-outline-shadow {
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 4px rgba(0,0,0,0.8);
+            color: white; font-weight: 900;
+        }
+
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -54,31 +75,50 @@
         <div class="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
             <div class="flex flex-row items-center justify-center w-full max-w-5xl gap-2 md:gap-4 h-full max-h-[800px]">
                 
-                <div class="w-10 md:w-16 h-full flex flex-col gap-2 py-2 overflow-y-auto no-scrollbar shrink-0">
-                    <div v-for="p in playerList" :key="p.uid" class="relative group w-full flex-1 min-h-[50px] md:min-h-[60px] max-h-[100px] flex flex-col items-center">
+                <div class="w-14 md:w-20 h-full flex flex-col gap-2 py-2 overflow-y-auto no-scrollbar shrink-0">
+                    <div v-for="p in playerList" :key="p.uid" class="relative group w-full flex-1 min-h-[70px] max-h-[120px] flex flex-col items-center">
                         
+                        <div class="absolute bottom-8 left-0 w-full h-48 pointer-events-none z-[60] overflow-visible">
+                            <div v-for="pig in pigParticles[p.uid]" :key="pig.id" class="pig-particle" :style="pig.style">🐷</div>
+                        </div>
+
                         <transition name="emote-pop">
-                            <div v-if="activeEmotes[p.uid]" class="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
-                                <span class="text-3xl md:text-4xl filter drop-shadow-lg">[[ activeEmotes[p.uid] ]]</span>
+                            <div v-if="activeEmotes[p.uid]" class="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
+                                <span class="text-3xl md:text-4xl text-outline-shadow">[[ activeEmotes[p.uid] ]]</span>
                             </div>
                         </transition>
 
-                        <div class="relative w-full h-full bg-slate-800 rounded-lg overflow-hidden border border-slate-700 shadow-md flex flex-col justify-end">
+                        <div class="relative w-full flex-1 bg-slate-800 rounded-lg overflow-hidden border border-slate-700 shadow-md flex flex-col justify-end">
                             <div v-if="gameState.blind_mode" class="absolute inset-0 z-20 bg-slate-800 flex items-center justify-center"><span class="text-white text-[10px] font-bold">?</span></div>
                             <div class="w-full hp-fill-v" :class="getHpColor(p.hp)" :style="{ height: (p.hp * 10) + '%' }"></div>
-                            
-                            <div v-if="!activeEmotes[p.uid]" class="absolute inset-0 flex items-center justify-center z-10">
-                                <span class="text-sm md:text-lg font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">[[ p.hp ]]</span>
+                            <div v-if="!activeEmotes[p.uid] && !gameState.blind_mode" class="absolute inset-0 flex items-center justify-center z-10">
+                                <span class="text-sm md:text-lg font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">[[ Math.max(0, p.hp) ]]</span>
                             </div>
                         </div>
-                        <div class="text-[8px] md:text-[10px] font-bold text-center text-slate-500 mt-1 truncate w-full">[[ p.name.substring(0, 3) ]]</div>
+                        
+                        <div class="w-full flex flex-col items-center mt-1 gap-1 relative z-50">
+                            <div class="text-[8px] md:text-[10px] font-bold text-center text-slate-500 truncate w-full leading-tight">[[ p.name.substring(0, 4) ]]</div>
+                            <button @click.stop="sendLike(p.uid)" 
+                                :disabled="me && me.likes_sent >= (gameState.config?.max_likes || 10)"
+                                :class="me && me.likes_sent >= (gameState.config?.max_likes || 10) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-pink-100 hover:bg-pink-200 text-pink-600 active:scale-95 border-pink-200'"
+                                class="flex items-center justify-center gap-1 w-full h-7 md:h-8 rounded-md transition shadow-sm border select-none">
+                                <span v-if="me && me.likes_sent >= (gameState.config?.max_likes || 10)" class="text-[8px] font-bold">MAX</span>
+                                <template v-else>
+                                    <span class="text-xs md:text-sm">🐷</span>
+                                    <span class="text-xs md:text-sm font-black">[[ p.likes || 0 ]]</span>
+                                </template>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="flex-1 h-full flex items-center justify-center max-w-md w-full">
-                    
+                <div class="flex-1 h-full flex items-center justify-center max-w-md w-full relative">
+                    <div class="absolute inset-x-0 bottom-0 h-full pointer-events-none z-[70] overflow-hidden">
+                        <div v-for="pig in mainPanelParticles" :key="pig.id" class="pig-particle" :style="pig.style">🐷</div>
+                    </div>
+
                     <transition name="fade" mode="out-in">
-                        <div v-if="gameState.phase === 'LOBBY'" class="glass rounded-2xl p-4 md:p-8 w-full text-center shadow-lg">
+                        <div v-if="gameState.phase === 'LOBBY'" class="glass rounded-2xl p-4 md:p-8 w-full text-center shadow-lg h-auto flex flex-col max-h-[90%]">
                             <div v-if="!hasJoined">
                                 <div class="mb-6"><h2 class="text-xl font-bold mb-2">加入对局</h2><p class="text-xs text-slate-500">请输入你的代号</p></div>
                                 <input v-model="nickname" @keyup.enter="joinGame" type="text" placeholder="NAME" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 text-center text-lg font-bold uppercase outline-none focus:ring-2 ring-indigo-500">
@@ -86,14 +126,14 @@
                             </div>
                             <div v-else class="flex flex-col h-full">
                                 <h2 class="text-xl font-bold mb-4">等待准备</h2>
-                                <div class="flex-1 overflow-y-auto space-y-2 mb-4 bg-white/50 rounded-xl p-2 max-h-[300px]">
+                                <div class="flex-1 overflow-y-auto space-y-2 mb-4 bg-white/50 rounded-xl p-2 min-h-0">
                                     <div v-for="p in playerList" :key="p.uid" class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-left">
                                         <span class="font-bold text-sm truncate">[[ p.name ]]</span>
                                         <span v-if="p.ready" class="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-bold shrink-0">READY</span>
                                         <span v-else class="text-[10px] bg-slate-100 text-slate-400 px-2 py-1 rounded font-bold shrink-0">WAITING</span>
                                     </div>
                                 </div>
-                                <div class="mt-auto">
+                                <div class="mt-auto shrink-0">
                                     <p class="text-xs text-slate-400 mb-4">[[ readyCount ]] / [[ playerList.length ]] READY (Min 3)</p>
                                     <div class="flex gap-2 w-full">
                                         <button @click="leaveGame" class="flex-1 bg-red-100 text-red-600 p-3 md:p-4 rounded-xl font-bold shadow-lg transition active:scale-95">退出</button>
@@ -103,9 +143,9 @@
                             </div>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'PRE_GAME'" class="glass rounded-2xl p-4 md:p-6 w-full flex flex-col h-full max-h-[500px] shadow-lg">
+                        <div v-else-if="gameState.phase === 'PRE_GAME'" class="glass rounded-2xl p-4 md:p-6 w-full flex flex-col h-auto max-h-[90%] shadow-lg">
                             <div class="text-center mb-4"><h2 class="text-xl font-bold">规则确认</h2></div>
-                            <div class="flex-1 overflow-y-auto space-y-2 pr-1 mb-4 bg-white/50 p-2 rounded-xl">
+                            <div class="flex-1 overflow-y-auto space-y-2 pr-1 mb-4 bg-white/50 p-2 rounded-xl min-h-0">
                                 <div v-for="(rule, idx) in basicRules" :key="idx" class="flex gap-2 text-xs md:text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-100 items-start">
                                     <span class="font-bold text-indigo-500 mt-0.5">[[ idx + 1 ]]</span><span class="leading-tight text-left">[[ rule ]]</span>
                                 </div>
@@ -124,7 +164,7 @@
                             <div class="mt-8 mb-4"><p class="text-xs text-slate-500">RESUMING IN</p><p class="text-4xl font-mono font-bold text-yellow-400">[[ timer ]]</p></div>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'INPUT'" class="glass rounded-2xl p-4 md:p-5 w-full flex flex-col h-full max-h-[600px] shadow-lg">
+                        <div v-else-if="gameState.phase === 'INPUT'" class="glass rounded-2xl p-4 md:p-5 w-full flex flex-col h-auto max-h-[90%] shadow-lg">
                             <div class="mb-4 shrink-0 space-y-2">
                                 <div v-if="gameState.round_event" class="w-full bg-indigo-500 text-white p-2 rounded-lg text-xs font-bold text-center shadow animate-pulse">[[ gameState.round_event.desc ]]</div>
                                 <div v-if="gameState.rules.length > 0" class="flex flex-wrap gap-1 md:gap-2 max-h-24 overflow-y-auto bg-white/50 p-2 rounded-lg justify-center">
@@ -153,7 +193,7 @@
                             </div>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'RESULT'" class="glass rounded-2xl p-4 w-full flex flex-col h-full max-h-[600px] shadow-lg">
+                        <div v-else-if="gameState.phase === 'RESULT'" class="glass rounded-2xl p-4 w-full flex flex-col h-auto max-h-[90%] shadow-lg">
                             <div class="text-center mb-4 shrink-0">
                                 <p class="text-[10px] text-slate-400 uppercase mb-2">Round Result</p>
                                 <div class="flex items-center justify-center gap-4 md:gap-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -163,7 +203,7 @@
                                 </div>
                                 <div v-if="gameState.last_result.log.includes('触发') || gameState.last_result.log.includes('冲突') || gameState.last_result.log.includes('互换')" class="mt-2 text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded inline-block">[[ gameState.last_result.log.split('|').slice(1).join(' | ') ]]</div>
                             </div>
-                            <div class="flex-1 overflow-y-auto space-y-2 pr-1 pb-2">
+                            <div class="flex-1 overflow-y-auto space-y-2 pr-1 pb-2 min-h-0">
                                 <div v-for="detail in sortedDetails" :key="detail.name" class="flex items-center justify-between p-3 rounded-xl border bg-white" :class="detail.win ? 'border-emerald-200 shadow-sm' : 'border-slate-100'">
                                     <div class="flex items-center gap-3">
                                         <span class="font-bold text-sm truncate max-w-[80px]" :class="detail.win ? 'text-emerald-600' : 'text-slate-600'">[[ detail.name ]]</span>
@@ -175,19 +215,19 @@
                                     <div class="flex items-center gap-2">
                                         <span v-if="detail.win" class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">WIN</span>
                                         <span v-else class="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded animate-pulse">-[[ detail.dmg ]]</span>
-                                        <div class="flex flex-col items-end w-8"><span class="text-sm font-black text-slate-700 leading-none">[[ detail.hp ]]</span></div>
+                                        <div class="flex flex-col items-end w-8"><span class="text-sm font-black text-slate-700 leading-none">[[ Math.max(0, detail.hp) ]]</span></div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'END'" class="glass rounded-2xl w-full flex flex-col h-full max-h-[700px] overflow-hidden shadow-lg">
+                        <div v-else-if="gameState.phase === 'END'" class="glass rounded-2xl w-full flex flex-col h-auto max-h-[90%] overflow-hidden shadow-lg">
                             <div class="w-full p-4 md:p-6 text-center shrink-0">
                                 <div class="text-6xl mb-2 animate-bounce">👑</div>
                                 <h2 class="text-2xl font-black text-slate-800">GAME OVER</h2>
                                 <p class="text-lg text-indigo-600 font-bold mb-2">Winner: [[ getWinnerName() ]]</p>
                                 <p class="text-xs text-slate-500">New Game in [[ timer ]]s</p>
-                                <button @click="resetGame" class="mt-2 bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg active:scale-95">Reset Now</button>
+                                <button @click="resetGame" class="mt-4 bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg active:scale-95">Reset Now</button>
                             </div>
                             <div class="w-full flex-1 overflow-y-auto bg-white/50 p-4 border-t border-slate-200">
                                 <h3 class="text-xs font-bold text-slate-400 uppercase mb-4 sticky top-0 bg-white/90 backdrop-blur py-2 text-center">Battle Log</h3>
@@ -196,6 +236,9 @@
                                         <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-50">
                                             <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">R[[ round.round_num ]]</span>
                                             <span class="text-[10px] text-slate-400 font-mono">Avg:[[ round.avg ]] → Target:[[ round.target ]]</span>
+                                        </div>
+                                        <div v-if="round.active_rules && round.active_rules.length" class="mb-2 flex flex-col gap-1">
+                                            <span v-for="r in round.active_rules" class="text-[8px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">📌 [[ r ]]</span>
                                         </div>
                                         <div v-if="round.event_desc" class="mb-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded font-bold border border-amber-100">⚡ [[ round.event_desc ]]</div>
                                         <div class="space-y-1">
@@ -218,7 +261,6 @@
                     <button @click="sendEmote('😭')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">😭</button>
                     <button @click="sendEmote('❓')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">❓</button>
                     <button @click="sendEmote('😱')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">😱</button>
-                    
                     <div class="h-px bg-slate-300 w-full my-1"></div>
                     <button @click="promptCustomEmote" class="w-8 h-8 md:w-10 md:h-10 bg-indigo-500 text-white rounded-full shadow-md text-lg md:text-xl hover:bg-indigo-600 transition active:scale-95 flex items-center justify-center">➕</button>
                 </div>
@@ -235,6 +277,7 @@
                         <div v-if="!isAdminAuth" class="space-y-4"><input v-model="adminPass" type="password" class="w-full border p-3 rounded-lg text-center" placeholder="Password"><button @click="adminLogin" class="w-full bg-slate-800 text-white p-3 rounded-lg font-bold">解锁</button><p v-if="adminError" class="text-red-500 text-xs text-center">密码错误</p></div>
                         <div v-else class="space-y-6">
                             <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold">强制重置 (清空)</button>
+                            <div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Game Settings</h3><div class="flex gap-2 items-center"><span class="text-xs w-24">Max Likes:</span><input type="number" v-model="adminSettings.maxLikes" class="border p-1 w-16 text-center text-xs"><button @click="updateSettings" class="bg-blue-500 text-white px-2 py-1 rounded text-xs">Save</button></div></div>
                             <div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Trigger Event</h3><div class="space-y-2"><div v-for="event in adminTempPool" :key="event.id" class="text-xs border rounded-lg p-2 bg-indigo-50 flex justify-between items-center gap-2"><span class="text-indigo-800 leading-tight flex-1">[[ event.desc ]]</span><button @click="adminAddTempRule(event.id)" class="bg-indigo-600 text-white px-2 py-1 rounded whitespace-nowrap">触发</button></div></div></div>
                             <div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Inject Perm Rules</h3><div class="space-y-2"><div v-for="rule in adminPermPool" :key="rule.id" class="text-xs border rounded-lg p-2 bg-slate-50 flex justify-between items-center gap-2"><span class="text-slate-600 leading-tight flex-1">[[ rule.desc ]]</span><button @click="adminAddPermRule(rule.id)" class="bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap">添加</button></div></div></div>
                         </div>
@@ -258,25 +301,61 @@
 
         const app = createApp({
             setup() {
-                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [] });
+                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [], config: { max_likes: 10 } });
                 const nickname = ref(localStorage.getItem('bg_name') || ''); 
                 const inputVal = ref(50); const timer = ref(0); const myGuess = ref(null); const basicRules = ref([]);
                 const showAdmin = ref(false); const adminPass = ref(''); const isAdminAuth = ref(false); const adminError = ref(false); const adminPermPool = ref([]); const adminTempPool = ref([]);
                 const activeEmotes = reactive({});
+                const pigParticles = reactive({});
+                const mainPanelParticles = reactive([]);
+                const adminSettings = reactive({ maxLikes: 10 });
 
                 socket.on('connect', () => { socket.emit('identify', { uid: myUid }); });
                 document.addEventListener("visibilitychange", () => { if (!document.hidden && !socket.connected) socket.connect(); });
 
                 socket.on('init_config', (data) => { basicRules.value = data.basic_rules; });
-                socket.on('state_update', (data) => { gameState.value = data; timer.value = data.timer; });
+                socket.on('state_update', (data) => { 
+                    gameState.value = data; 
+                    timer.value = data.timer; 
+                });
                 socket.on('timer_update', (data) => { timer.value = data.timer; });
-                socket.on('admin_auth_success', (data) => { isAdminAuth.value = true; adminError.value = false; adminPermPool.value = data.perm_pool; adminTempPool.value = data.temp_pool; });
+                socket.on('admin_auth_success', (data) => { 
+                    isAdminAuth.value = true; adminError.value = false; 
+                    adminPermPool.value = data.perm_pool; 
+                    adminTempPool.value = data.temp_pool; 
+                    if(data.config) adminSettings.maxLikes = data.config.max_likes;
+                });
                 socket.on('admin_auth_fail', () => { adminError.value = true; });
-                socket.on('admin_pool_update', (data) => { adminPermPool.value = data.perm_pool; adminTempPool.value = data.temp_pool; });
+                socket.on('admin_pool_update', (data) => { adminPermPool.value = data.perm_pool; adminTempPool.value = data.temp_pool; if(data.config) adminSettings.maxLikes = data.config.max_likes; });
                 
                 socket.on('player_emote', (data) => {
                     activeEmotes[data.uid] = data.emote;
                     setTimeout(() => { delete activeEmotes[data.uid]; }, 2000);
+                });
+
+                socket.on('trigger_like_effect', (data) => {
+                    const uid = data.target_uid;
+                    if(!pigParticles[uid]) pigParticles[uid] = [];
+                    const count = 5 + Math.floor(Math.random() * 4);
+                    for(let i=0; i<count; i++) {
+                        const id = Date.now() + Math.random();
+                        const offset = (Math.random() * 40 - 20);
+                        pigParticles[uid].push({
+                            id: id,
+                            style: { left: `calc(50% + ${offset}%)`, animationDuration: (1.5 + Math.random()) + 's', animationDelay: (Math.random() * 1.0) + 's' }
+                        });
+                        setTimeout(() => { if(pigParticles[uid]) pigParticles[uid] = pigParticles[uid].filter(p => p.id !== id); }, 2500);
+                    }
+                    if (uid === myUid) {
+                        for(let i=0; i<8; i++) {
+                            const id = Date.now() + Math.random();
+                            mainPanelParticles.push({
+                                id: id,
+                                style: { left: (10 + Math.random() * 80) + '%', animationDuration: (2 + Math.random()) + 's', animationDelay: (Math.random() * 0.5) + 's', fontSize: (24 + Math.random() * 16) + 'px' }
+                            });
+                            setTimeout(() => { const idx = mainPanelParticles.findIndex(p => p.id === id); if(idx !== -1) mainPanelParticles.splice(idx, 1); }, 3000);
+                        }
+                    }
                 });
 
                 const me = computed(() => gameState.value.players[myUid]);
@@ -289,19 +368,19 @@
                 const joinGame = () => { if(nickname.value) { localStorage.setItem('bg_name', nickname.value); socket.emit('join', { uid: myUid, name: nickname.value }); } };
                 const leaveGame = () => { socket.emit('leave_game', { uid: myUid }); };
                 const sendEmote = (emote) => { socket.emit('send_emote', { uid: myUid, emote }); };
-                const promptCustomEmote = () => {
-                    const val = prompt("输入发送内容（最多4字）:");
-                    if(val) sendEmote(val);
-                };
+                const promptCustomEmote = () => { const val = prompt("输入表情 (max 4):"); if(val) sendEmote(val); };
+                const sendLike = (targetUid) => { socket.emit('send_like', { target_uid: targetUid }); };
+                
                 const toggleReady = () => socket.emit('toggle_ready');
                 const confirmRule = () => socket.emit('confirm_rule');
                 const submitGuess = () => { myGuess.value = inputVal.value; socket.emit('submit_guess', { val: inputVal.value }); if(me.value) me.value.submitted = true; };
                 const resetGame = () => { socket.emit('reset_game'); inputVal.value = 50; myGuess.value = null; };
 
                 const adminLogin = () => socket.emit('admin_login', { password: adminPass.value });
-                const adminReset = () => { if (confirm("强制重置？")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'reset' }); showAdmin.value = false; } };
-                const adminAddPermRule = (id) => { if (confirm("激活永久规则？")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_perm_rule', rule_id: id }); } };
-                const adminAddTempRule = (id) => { if (confirm("立即触发回合事件？")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_temp_rule', rule_id: id }); } };
+                const adminReset = () => { if (confirm("Confirm Reset?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'reset' }); showAdmin.value = false; } };
+                const adminAddPermRule = (id) => { if (confirm("Activate?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_perm_rule', rule_id: id }); } };
+                const adminAddTempRule = (id) => { if (confirm("Trigger?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_temp_rule', rule_id: id }); } };
+                const updateSettings = () => { socket.emit('admin_command', { password: adminPass.value, cmd: 'update_config', max_likes: adminSettings.maxLikes }); };
                 const refreshPool = () => socket.emit('admin_command', { password: adminPass.value, cmd: 'refresh_pool' });
 
                 const getHpColor = (hp) => hp > 5 ? 'bg-emerald-400' : (hp > 2 ? 'bg-amber-400' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]');
@@ -309,10 +388,11 @@
 
                 return {
                     gameState, nickname, inputVal, timer, myUid, basicRules,
-                    me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount, activeEmotes,
-                    showAdmin, adminPass, isAdminAuth, adminError, adminPermPool, adminTempPool,
-                    joinGame, leaveGame, sendEmote, promptCustomEmote, toggleReady, confirmRule, submitGuess, resetGame,
-                    adminLogin, adminReset, adminAddPermRule, adminAddTempRule, refreshPool,
+                    me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount, activeEmotes, pigParticles, mainPanelParticles,
+                    showAdmin, adminPass, isAdminAuth, adminError, adminPermPool, adminTempPool, adminSettings,
+                    joinGame, leaveGame, sendEmote, promptCustomEmote, sendLike,
+                    toggleReady, confirmRule, submitGuess, resetGame,
+                    adminLogin, adminReset, adminAddPermRule, adminAddTempRule, updateSettings, refreshPool,
                     getHpColor, getWinnerName
                 }
             }

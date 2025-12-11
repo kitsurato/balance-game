@@ -12,7 +12,7 @@ app.config['SECRET_KEY'] = 'secret!'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-ADMIN_PASSWORD = "110120119" 
+ADMIN_PASSWORD = "admin" 
 
 MAX_HP = 10
 MAX_PLAYERS = 8
@@ -36,7 +36,11 @@ game_state = {
     "blind_mode": False,
     "logs": [],     
     "last_result": {},
-    "full_history": []
+    "full_history": [],
+    # 新增配置字段
+    "config": {
+        "max_likes": 10
+    }
 }
 
 BASIC_RULES = [
@@ -50,15 +54,15 @@ BASIC_RULES = [
 PERMANENT_RULE_POOL = [
     {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。", "type": "perm"},
     {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。", "type": "perm"},
-    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 的人为本回合胜者。", "type": "perm"},
-    {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算。", "type": "perm"},
+    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。", "type": "perm"},
+    {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算(权重1)。", "type": "perm"},
     {"id": 5, "desc": "【绝境】HP < 3 的玩家，其数字对均值的权重变为 3 倍。", "type": "perm"}
 ]
 
 ROUND_EVENT_POOL = [
-    {"id": 101, "desc": "【混乱】两人选择数字交换！", "type": "temp"},
+    {"id": 101, "desc": "【混乱】与他人交换所选数字！", "type": "temp"},
     {"id": 102, "desc": "【波动】本回合目标倍率发生突变！", "type": "temp"},
-    {"id": 103, "desc": "【安全】选 40-60 时免除伤害，且本回合胜者 +1 HP！", "type": "temp"},
+    {"id": 103, "desc": "【安全】选 40-60 免伤，且本回合胜者 +1 HP！", "type": "temp"},
     {"id": 104, "desc": "【黑暗】隐藏全员 HP，且无法看到自己选择的数字！", "type": "temp"}
 ]
 
@@ -95,6 +99,9 @@ def handle_timeout(phase):
 
 def perform_reset():
     global game_state, current_perm_pool, SID_TO_UID
+    # 保持当前的配置设定 (如max_likes)，不重置为默认
+    current_config = game_state["config"]
+    
     game_state["players"] = {} 
     SID_TO_UID = {} 
     game_state["phase"] = "LOBBY"
@@ -107,6 +114,8 @@ def perform_reset():
     game_state["dead_guesses"] = []
     game_state["blind_mode"] = False
     game_state["full_history"] = []
+    game_state["config"] = current_config # 保持配置
+    
     current_perm_pool = list(PERMANENT_RULE_POOL)
     broadcast_state()
 
@@ -125,11 +134,9 @@ def start_new_round():
 
     alive_count = sum(1 for p in game_state["players"].values() if p["alive"])
     
-    # 2人时 70% 概率触发混乱
     if alive_count == 2 and random.random() < 0.7:
         chaos_event = next(e for e in ROUND_EVENT_POOL if e["id"] == 101)
         apply_round_event(chaos_event)
-    # 常规 30% 概率
     elif random.random() < 0.4:
         other_events = [e for e in ROUND_EVENT_POOL if e["id"] != 101]
         if other_events:
@@ -198,13 +205,8 @@ def calculate_round():
     
     log_msg = f"R{game_state['round']}"
     
-    # --- 修复逻辑：强制混乱交换 (错排算法) ---
     if game_state["round_event"] and game_state["round_event"]["id"] == 101 and len(guesses) > 1:
-        # 创建索引列表 [0, 1, 2...]
         indices = list(range(len(guesses)))
-        
-        # 尝试打乱，直到没有任何一个索引在原来的位置 (错排)
-        # 例如：[0, 1] 必须变成 [1, 0]，不能是 [0, 1]
         is_fixed_point = True
         while is_fixed_point:
             random.shuffle(indices)
@@ -213,29 +215,29 @@ def calculate_round():
                 if i == new_idx:
                     is_fixed_point = True
                     break
-        
-        # 应用交换：先备份原始数据，再根据打乱的索引赋值
         original_data = [(g["val"], g["player"]["name"]) for g in guesses]
-        
         for i, g in enumerate(guesses):
             target_idx = indices[i]
             g["val"] = original_data[target_idx][0]
             g["source"] = original_data[target_idx][1]
-            
-        log_msg += " | ⚡交换触发"
+        log_msg += " | ⚡交换"
 
-    rule_ids = [r["id"] for r in game_state["rules"]]
+    active_rule_ids = set([r["id"] for r in game_state["rules"]])
+    is_final_duel = len(alive) <= 2
+    if is_final_duel:
+        active_rule_ids.add(3) 
+
     total_val = 0
     total_w = 0
     values = [] 
     
     for g in guesses:
         values.append(g['val'])
-        w = 3 if (5 in rule_ids and g['player']['hp'] < 3) else 1
+        w = 3 if (5 in active_rule_ids and g['player']['hp'] < 3) else 1
         total_val += g['val'] * w
         total_w += w
         
-    if 4 in rule_ids:
+    if 4 in active_rule_ids:
         for ghost_val in game_state["dead_guesses"]:
             total_val += ghost_val
             total_w += 1
@@ -250,14 +252,14 @@ def calculate_round():
     base_damage = 1
 
     rule3_triggered = False
-    if 3 in rule_ids and 0 in values and 100 in values:
+    if 3 in active_rule_ids and 0 in values and 100 in values:
         winners = [g["player"] for g in guesses if g["val"] == 100]
         rule3_triggered = True
         log_msg += " | 极值(100胜)"
 
     if not rule3_triggered:
         candidates = guesses[:]
-        if 1 in rule_ids: 
+        if 1 in active_rule_ids: 
             counts = {x: values.count(x) for x in values}
             conflict_vals = [v for v, c in counts.items() if c > 1]
             candidates = [g for g in guesses if counts[g['val']] == 1]
@@ -270,7 +272,7 @@ def calculate_round():
             candidates.sort(key=lambda x: abs(x['val'] - target))
             min_diff = abs(candidates[0]['val'] - target)
             winners = [x['player'] for x in candidates if abs(x['val'] - target) == min_diff]
-            if 2 in rule_ids and min_diff < 1: 
+            if 2 in active_rule_ids and min_diff < 1: 
                 base_damage = 2
                 log_msg += " | 精准"
 
@@ -294,6 +296,7 @@ def calculate_round():
         p["is_winner"] = is_winner
         
         round_details.append({
+            "uid": p["uid"], 
             "name": p["name"],
             "val": player_guess_data["val"],
             "org_val": player_guess_data["org_val"],
@@ -303,26 +306,46 @@ def calculate_round():
             "win": is_winner
         })
 
+    active_rules_desc = []
+    all_perm_rules = PERMANENT_RULE_POOL 
+    for rid in active_rule_ids:
+        rule_def = next((r for r in all_perm_rules if r["id"] == rid), None)
+        if rule_def:
+            desc = rule_def["desc"]
+            if rid == 3 and is_final_duel:
+                desc = "【极值(决战强制)】0 与 100 同时出现，选 100 者直接获胜。"
+            active_rules_desc.append(desc)
+
     round_history = {
         "round_num": game_state["round"],
         "target": round(target, 2),
         "avg": round(avg, 2),
         "event_desc": game_state["round_event"]["desc"] if game_state["round_event"] else None,
-        "active_rules": [r["desc"] for r in game_state["rules"]],
+        "active_rules": active_rules_desc,
         "player_data": round_details
     }
     game_state["full_history"].append(round_history)
 
     newly_dead = [p for p in players.values() if p["hp"] <= 0 and p["alive"]]
+    current_alive_count = sum(1 for p in players.values() if p["hp"] > 0)
+    
     game_state["new_rule"] = None 
-
     triggered_new_rule = False
+
     for p in newly_dead:
         p["alive"] = False
         dead_val = next((d['val'] for d in round_details if d['name'] == p['name']), 0)
         game_state["dead_guesses"].append(dead_val)
 
-        if current_perm_pool and not triggered_new_rule: 
+    if newly_dead:
+        if current_alive_count == 2:
+            rule_3 = next((r for r in current_perm_pool if r["id"] == 3), None)
+            if rule_3:
+                current_perm_pool.remove(rule_3)
+                trigger_perm_rule(rule_3, log_msg)
+                triggered_new_rule = True
+        
+        if not triggered_new_rule and current_perm_pool: 
             random_index = random.randint(0, len(current_perm_pool) - 1)
             new_rule = current_perm_pool.pop(random_index)
             trigger_perm_rule(new_rule, log_msg)
@@ -389,10 +412,13 @@ def on_join(data):
     if len(game_state["players"]) >= MAX_PLAYERS: return
     name = data.get('name', f'Player')
     game_state["players"][uid] = {
+        "uid": uid,
         "name": name, "hp": MAX_HP, "alive": True,
         "guess": None, "submitted": False, 
         "confirmed": False, "ready": False,
-        "last_dmg": 0, "is_winner": False
+        "last_dmg": 0, "is_winner": False,
+        "likes": 0,
+        "likes_sent": 0
     }
     broadcast_state()
 
@@ -405,13 +431,28 @@ def on_leave(data):
         for k in keys_to_remove: del SID_TO_UID[k]
         broadcast_state()
 
-# --- 修复：添加 broadcast=True，让所有人都能收到表情 ---
 @socketio.on('send_emote')
 def on_send_emote(data):
     uid = data.get('uid')
     emote = data.get('emote')
     if uid and uid in game_state["players"] and emote:
         emit('player_emote', {'uid': uid, 'emote': emote[:4]}, broadcast=True)
+
+@socketio.on('send_like')
+def on_send_like(data):
+    uid = request.sid
+    sender_uid = SID_TO_UID.get(uid)
+    target_uid = data.get('target_uid')
+    if sender_uid and target_uid and sender_uid in game_state["players"] and target_uid in game_state["players"]:
+        sender = game_state["players"][sender_uid]
+        target = game_state["players"][target_uid]
+        # 使用动态配置检查
+        limit = game_state["config"].get("max_likes", 10)
+        if sender["likes_sent"] < limit:
+            sender["likes_sent"] += 1
+            target["likes"] += 1
+            broadcast_state()
+            emit('trigger_like_effect', {'target_uid': target_uid}, broadcast=True)
 
 @socketio.on('toggle_ready')
 def on_toggle_ready():
@@ -446,7 +487,7 @@ def on_submit(data):
 @socketio.on('admin_login')
 def on_admin_login(data):
     if data.get('password') == ADMIN_PASSWORD:
-        emit('admin_auth_success', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL})
+        emit('admin_auth_success', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL, 'config': game_state['config']})
     else:
         emit('admin_auth_fail')
 
@@ -470,8 +511,11 @@ def on_admin_command(data):
         if event:
             apply_round_event(event)
             broadcast_state()
+    elif cmd == 'update_config':
+        game_state["config"]["max_likes"] = int(data.get("max_likes", 10))
+        broadcast_state()
     elif cmd == 'refresh_pool':
-         emit('admin_pool_update', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL})
+         emit('admin_pool_update', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL, 'config': game_state['config']})
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, host='0.0.0.0', port=5002)
