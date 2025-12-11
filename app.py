@@ -43,23 +43,23 @@ BASIC_RULES = [
     "每轮选取 0 至 100 之间的整数。",
     "目标值为全员平均数的 X 倍 (默认为 0.8)。",
     "最接近目标者获胜，其余玩家扣除 1 点生命。",
-    "有玩家淘汰时，追加永久规则。"
-    "每回合可能触发随机限定规则。"
+    "每回合可能触发随机限定规则。",
+    "玩家淘汰时，追加永久规则。"
 ]
 
 PERMANENT_RULE_POOL = [
     {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。", "type": "perm"},
     {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。", "type": "perm"},
-    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。", "type": "perm"},
+    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 的人为本回合胜者。", "type": "perm"},
     {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算。", "type": "perm"},
     {"id": 5, "desc": "【绝境】HP < 3 的玩家，其数字对均值的权重变为 3 倍。", "type": "perm"}
 ]
 
 ROUND_EVENT_POOL = [
-    {"id": 101, "desc": "【混乱】本回合所有人的数字将随机互换！", "type": "temp"},
+    {"id": 101, "desc": "【混乱】两人选择数字交换！", "type": "temp"},
     {"id": 102, "desc": "【波动】本回合目标倍率发生突变！", "type": "temp"},
-    {"id": 103, "desc": "【安全】本回合选择 40-60 之间数字的人免除扣血！但胜者+1血！", "type": "temp"},
-    {"id": 104, "desc": "【黑暗】本回合隐藏所有人的 HP，且无法看到自己选择的数字！", "type": "temp"}
+    {"id": 103, "desc": "【安全】选 40-60 时免除伤害，且本回合胜者 +1 HP！", "type": "temp"},
+    {"id": 104, "desc": "【黑暗】隐藏全员 HP，且无法看到自己选择的数字！", "type": "temp"}
 ]
 
 current_perm_pool = list(PERMANENT_RULE_POOL)
@@ -115,7 +115,6 @@ def start_new_round():
     game_state["round"] += 1
     game_state["timer"] = TIME_LIMIT_ROUND
     
-    # 重置每回合状态
     for p in game_state["players"].values():
         p["submitted"] = False
         p["guess"] = None
@@ -124,18 +123,14 @@ def start_new_round():
     game_state["round_event"] = None
     game_state["blind_mode"] = False
 
-    # --- 新增：事件触发逻辑 ---
     alive_count = sum(1 for p in game_state["players"].values() if p["alive"])
     
-    # 1. 优先判定【混乱】(ID 101)
-    # 条件：只剩2人，且 70% 概率触发
+    # 2人时 70% 概率触发混乱
     if alive_count == 2 and random.random() < 0.7:
         chaos_event = next(e for e in ROUND_EVENT_POOL if e["id"] == 101)
         apply_round_event(chaos_event)
-        
-    # 2. 如果没触发混乱，进行常规判定 (40% 概率)
+    # 常规 30% 概率
     elif random.random() < 0.4:
-        # 从池中排除【混乱】，确保它只在两人对决时出现
         other_events = [e for e in ROUND_EVENT_POOL if e["id"] != 101]
         if other_events:
             event = random.choice(other_events)
@@ -198,20 +193,36 @@ def calculate_round():
     guesses = []
     for p in alive:
         val = p["guess"]
-        # 未选择者随机分配
         if val is None: val = random.randint(0, 100)
         guesses.append({"player": p, "val": val, "org_val": val, "source": p["name"]}) 
     
     log_msg = f"R{game_state['round']}"
     
-    # 混乱事件：交换数字
-    if game_state["round_event"] and game_state["round_event"]["id"] == 101:
-        value_source_pairs = [(g["val"], g["player"]["name"]) for g in guesses]
-        random.shuffle(value_source_pairs)
+    # --- 修复逻辑：强制混乱交换 (错排算法) ---
+    if game_state["round_event"] and game_state["round_event"]["id"] == 101 and len(guesses) > 1:
+        # 创建索引列表 [0, 1, 2...]
+        indices = list(range(len(guesses)))
+        
+        # 尝试打乱，直到没有任何一个索引在原来的位置 (错排)
+        # 例如：[0, 1] 必须变成 [1, 0]，不能是 [0, 1]
+        is_fixed_point = True
+        while is_fixed_point:
+            random.shuffle(indices)
+            is_fixed_point = False
+            for i, new_idx in enumerate(indices):
+                if i == new_idx:
+                    is_fixed_point = True
+                    break
+        
+        # 应用交换：先备份原始数据，再根据打乱的索引赋值
+        original_data = [(g["val"], g["player"]["name"]) for g in guesses]
+        
         for i, g in enumerate(guesses):
-            g["val"] = value_source_pairs[i][0]
-            g["source"] = value_source_pairs[i][1]
-        log_msg += " | ⚡交换"
+            target_idx = indices[i]
+            g["val"] = original_data[target_idx][0]
+            g["source"] = original_data[target_idx][1]
+            
+        log_msg += " | ⚡交换触发"
 
     rule_ids = [r["id"] for r in game_state["rules"]]
     total_val = 0
@@ -394,12 +405,13 @@ def on_leave(data):
         for k in keys_to_remove: del SID_TO_UID[k]
         broadcast_state()
 
+# --- 修复：添加 broadcast=True，让所有人都能收到表情 ---
 @socketio.on('send_emote')
 def on_send_emote(data):
     uid = data.get('uid')
     emote = data.get('emote')
     if uid and uid in game_state["players"] and emote:
-        emit('player_emote', {'uid': uid, 'emote': emote[:4]})
+        emit('player_emote', {'uid': uid, 'emote': emote[:4]}, broadcast=True)
 
 @socketio.on('toggle_ready')
 def on_toggle_ready():
@@ -462,5 +474,4 @@ def on_admin_command(data):
          emit('admin_pool_update', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL})
 
 if __name__ == '__main__':
-
     socketio.run(app, debug=True, host='0.0.0.0', port=5002)
