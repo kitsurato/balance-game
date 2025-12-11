@@ -11,248 +11,247 @@
     
     <style>
         body { font-family: 'Inter', sans-serif; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-        .mobile-h-screen { height: 100vh; height: 100dvh; }
+        .layout-container { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+        
         .fade-enter-active, .fade-leave-active { transition: opacity 0.5s ease; }
         .fade-enter-from, .fade-leave-to { opacity: 0; }
-        .hp-fill { transition: height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 0 15px rgba(255,255,255,0.2) inset; }
+        .hp-fill-v { transition: height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 0 10px rgba(255,255,255,0.3) inset; }
         .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07); }
         .hazard-stripe { background: repeating-linear-gradient(45deg, #fcd34d, #fcd34d 10px, #000 10px, #000 20px); }
         input[type=range] { touch-action: none; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 28px; width: 28px; background: #1e293b; border-radius: 50%; margin-top: -12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .blind-mode { filter: grayscale(100%) blur(4px); pointer-events: none; }
+        
+        /* 优化后的表情动画：弹出 + 上浮淡出 */
+        .emote-pop-enter-active { animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .emote-pop-leave-active { transition: all 0.5s ease-out; }
+        .emote-pop-leave-to { opacity: 0; transform: translateY(-20px) scale(1.1); }
+        
+        @keyframes pop-in {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body class="bg-slate-200 text-slate-800 mobile-h-screen overflow-hidden flex flex-col items-center justify-center select-none">
+<body class="bg-slate-200 text-slate-800 select-none overflow-hidden">
 
-    <div id="app" class="w-full max-w-lg relative h-full flex flex-col p-4">
+    <div id="app" class="layout-container relative">
         
-        <header class="flex justify-between items-start mb-2 z-10 shrink-0">
+        <header class="flex justify-between items-center p-3 z-10 shrink-0 bg-slate-200/50 backdrop-blur-sm">
             <div class="flex items-center gap-2">
-                <button @click="showAdmin = true" class="text-slate-400 hover:text-slate-600 p-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
-                <div>
-                    <h1 class="text-2xl font-black tracking-tighter text-slate-900 leading-none">BALANCE</h1>
-                    <p class="text-[10px] text-slate-400 tracking-widest uppercase">Survival Game</p>
-                </div>
+                <button @click="showAdmin = true" class="text-slate-400 hover:text-slate-600 p-1 bg-white rounded-full shadow-sm"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
+                <h1 class="text-lg font-black tracking-tighter text-slate-900 leading-none">BALANCE</h1>
             </div>
-            <div v-if="gameState.phase !== 'LOBBY'" class="text-right">
-                <div class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full inline-block mb-1">ROUND [[ gameState.round ]]</div>
-                <div v-if="['INPUT', 'PRE_GAME', 'RULE_ANNOUNCEMENT', 'END'].includes(gameState.phase)" class="text-3xl font-light tabular-nums text-slate-700 leading-none">[[ timer ]]<span class="text-xs">s</span></div>
+            <div v-if="gameState.phase !== 'LOBBY'" class="flex items-center gap-2">
+                <span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-1 rounded">R[[ gameState.round ]]</span>
+                <div v-if="['INPUT', 'PRE_GAME', 'RULE_ANNOUNCEMENT', 'END'].includes(gameState.phase)" class="bg-white px-2 py-0.5 rounded shadow-sm text-xl font-light tabular-nums text-slate-700">[[ timer ]]<span class="text-[10px] ml-0.5">s</span></div>
             </div>
         </header>
+
+        <div class="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
+            <div class="flex flex-row items-center justify-center w-full max-w-5xl gap-2 md:gap-4 h-full max-h-[800px]">
+                
+                <div class="w-10 md:w-16 h-full flex flex-col gap-2 py-2 overflow-y-auto no-scrollbar shrink-0">
+                    <div v-for="p in playerList" :key="p.uid" class="relative group w-full flex-1 min-h-[50px] md:min-h-[60px] max-h-[100px] flex flex-col items-center">
+                        
+                        <transition name="emote-pop">
+                            <div v-if="activeEmotes[p.uid]" class="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+                                <span class="text-3xl md:text-4xl filter drop-shadow-lg">[[ activeEmotes[p.uid] ]]</span>
+                            </div>
+                        </transition>
+
+                        <div class="relative w-full h-full bg-slate-800 rounded-lg overflow-hidden border border-slate-700 shadow-md flex flex-col justify-end">
+                            <div v-if="gameState.blind_mode" class="absolute inset-0 z-20 bg-slate-800 flex items-center justify-center"><span class="text-white text-[10px] font-bold">?</span></div>
+                            <div class="w-full hp-fill-v" :class="getHpColor(p.hp)" :style="{ height: (p.hp * 10) + '%' }"></div>
+                            
+                            <div v-if="!activeEmotes[p.uid]" class="absolute inset-0 flex items-center justify-center z-10">
+                                <span class="text-sm md:text-lg font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">[[ p.hp ]]</span>
+                            </div>
+                        </div>
+                        <div class="text-[8px] md:text-[10px] font-bold text-center text-slate-500 mt-1 truncate w-full">[[ p.name.substring(0, 3) ]]</div>
+                    </div>
+                </div>
+
+                <div class="flex-1 h-full flex items-center justify-center max-w-md w-full">
+                    
+                    <transition name="fade" mode="out-in">
+                        <div v-if="gameState.phase === 'LOBBY'" class="glass rounded-2xl p-4 md:p-8 w-full text-center shadow-lg">
+                            <div v-if="!hasJoined">
+                                <div class="mb-6"><h2 class="text-xl font-bold mb-2">加入对局</h2><p class="text-xs text-slate-500">请输入你的代号</p></div>
+                                <input v-model="nickname" @keyup.enter="joinGame" type="text" placeholder="NAME" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 text-center text-lg font-bold uppercase outline-none focus:ring-2 ring-indigo-500">
+                                <button @click="joinGame" class="w-full bg-slate-900 text-white p-4 rounded-xl font-bold text-lg active:scale-95 transition">JOIN</button>
+                            </div>
+                            <div v-else class="flex flex-col h-full">
+                                <h2 class="text-xl font-bold mb-4">等待准备</h2>
+                                <div class="flex-1 overflow-y-auto space-y-2 mb-4 bg-white/50 rounded-xl p-2 max-h-[300px]">
+                                    <div v-for="p in playerList" :key="p.uid" class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-left">
+                                        <span class="font-bold text-sm truncate">[[ p.name ]]</span>
+                                        <span v-if="p.ready" class="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-bold shrink-0">READY</span>
+                                        <span v-else class="text-[10px] bg-slate-100 text-slate-400 px-2 py-1 rounded font-bold shrink-0">WAITING</span>
+                                    </div>
+                                </div>
+                                <div class="mt-auto">
+                                    <p class="text-xs text-slate-400 mb-4">[[ readyCount ]] / [[ playerList.length ]] READY (Min 3)</p>
+                                    <div class="flex gap-2 w-full">
+                                        <button @click="leaveGame" class="flex-1 bg-red-100 text-red-600 p-3 md:p-4 rounded-xl font-bold shadow-lg transition active:scale-95">退出</button>
+                                        <button @click="toggleReady" :class="me && me.ready ? 'bg-emerald-500 text-white' : 'bg-slate-300 text-white'" class="flex-[2] p-3 md:p-4 rounded-xl font-bold shadow-lg transition active:scale-95">[[ me && me.ready ? '已准备' : '准备' ]]</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-else-if="gameState.phase === 'PRE_GAME'" class="glass rounded-2xl p-4 md:p-6 w-full flex flex-col h-full max-h-[500px] shadow-lg">
+                            <div class="text-center mb-4"><h2 class="text-xl font-bold">规则确认</h2></div>
+                            <div class="flex-1 overflow-y-auto space-y-2 pr-1 mb-4 bg-white/50 p-2 rounded-xl">
+                                <div v-for="(rule, idx) in basicRules" :key="idx" class="flex gap-2 text-xs md:text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-100 items-start">
+                                    <span class="font-bold text-indigo-500 mt-0.5">[[ idx + 1 ]]</span><span class="leading-tight text-left">[[ rule ]]</span>
+                                </div>
+                            </div>
+                            <button @click="confirmRule" :disabled="me && me.confirmed" :class="me && me.confirmed ? 'bg-emerald-500 cursor-not-allowed' : 'bg-slate-900 active:scale-95'" class="w-full h-14 rounded-xl font-bold text-lg text-white shadow-lg transition shrink-0">[[ me && me.confirmed ? '等待开始...' : '我已知晓' ]]</button>
+                        </div>
+
+                        <div v-else-if="gameState.phase === 'RULE_ANNOUNCEMENT'" class="bg-slate-900 text-white rounded-2xl p-6 w-full text-center relative overflow-hidden shadow-2xl h-auto">
+                            <div class="absolute top-0 left-0 w-full h-4 hazard-stripe opacity-80"></div><div class="absolute bottom-0 left-0 w-full h-4 hazard-stripe opacity-80"></div>
+                            <div class="text-6xl mb-6 animate-bounce mt-4">⚠</div>
+                            <h2 class="text-3xl font-black text-yellow-400 mb-2 tracking-widest">WARNING</h2>
+                            <p class="text-sm text-slate-400 mb-8 uppercase tracking-widest">System Alert</p>
+                            <div class="bg-red-600 p-4 md:p-6 rounded-xl shadow-2xl border-2 border-red-400">
+                                <p class="text-lg md:text-xl font-black text-white leading-relaxed">[[ gameState.new_rule ? gameState.new_rule.desc : 'Loading...' ]]</p>
+                            </div>
+                            <div class="mt-8 mb-4"><p class="text-xs text-slate-500">RESUMING IN</p><p class="text-4xl font-mono font-bold text-yellow-400">[[ timer ]]</p></div>
+                        </div>
+
+                        <div v-else-if="gameState.phase === 'INPUT'" class="glass rounded-2xl p-4 md:p-5 w-full flex flex-col h-full max-h-[600px] shadow-lg">
+                            <div class="mb-4 shrink-0 space-y-2">
+                                <div v-if="gameState.round_event" class="w-full bg-indigo-500 text-white p-2 rounded-lg text-xs font-bold text-center shadow animate-pulse">[[ gameState.round_event.desc ]]</div>
+                                <div v-if="gameState.rules.length > 0" class="flex flex-wrap gap-1 md:gap-2 max-h-24 overflow-y-auto bg-white/50 p-2 rounded-lg justify-center">
+                                    <div v-for="rule in gameState.rules" :key="rule.id" class="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded">[[ rule.desc ]]</div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="me && !me.alive" class="flex-1 flex flex-col items-center justify-center text-center"><span class="text-5xl mb-4 grayscale opacity-50">💀</span><h2 class="text-2xl font-black text-slate-800">ELIMINATED</h2></div>
+                            <div v-else-if="me && me.submitted" class="flex-1 flex flex-col items-center justify-center text-center">
+                                <div class="w-16 h-16 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mb-4"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>
+                                <h2 class="text-lg font-bold text-slate-700">已提交</h2><p class="text-3xl font-black text-slate-900 mt-1">[[ myGuess ]]</p>
+                            </div>
+                            <div v-else class="flex-1 flex flex-col justify-center">
+                                <div class="text-center mb-2"><span class="text-[10px] text-slate-400 font-bold uppercase">Target Multiplier</span><div class="text-xl md:text-2xl font-black text-indigo-600">x[[ gameState.multiplier ]]</div></div>
+                                <div class="text-center mb-6">
+                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select Number</label>
+                                    <div class="text-7xl md:text-8xl font-black text-slate-800 my-2 tabular-nums tracking-tighter">
+                                        <span v-if="gameState.blind_mode">???</span><span v-else>[[ inputVal ]]</span>
+                                    </div>
+                                </div>
+                                <div class="px-2 mb-8">
+                                    <input type="range" min="0" max="100" v-model.number="inputVal" class="w-full h-3 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-900">
+                                    <div v-if="!gameState.blind_mode" class="flex justify-between text-[10px] text-slate-400 mt-2 font-bold px-1"><span>0</span><span>50</span><span>100</span></div>
+                                </div>
+                                <button @click="submitGuess" class="w-full bg-slate-900 text-white h-14 md:h-16 rounded-2xl font-bold text-xl shadow-xl hover:bg-slate-800 transform active:scale-95 transition">确认选择</button>
+                            </div>
+                        </div>
+
+                        <div v-else-if="gameState.phase === 'RESULT'" class="glass rounded-2xl p-4 w-full flex flex-col h-full max-h-[600px] shadow-lg">
+                            <div class="text-center mb-4 shrink-0">
+                                <p class="text-[10px] text-slate-400 uppercase mb-2">Round Result</p>
+                                <div class="flex items-center justify-center gap-4 md:gap-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                    <div><div class="text-lg font-medium text-slate-600">[[ gameState.last_result.avg ]]</div><div class="text-[10px] text-slate-300 font-bold">AVG</div></div>
+                                    <div class="text-xl text-slate-300">→</div>
+                                    <div><div class="text-3xl text-indigo-600 font-black">[[ gameState.last_result.target ]]</div><div class="text-[10px] text-indigo-400 font-bold">TARGET (x[[ gameState.multiplier ]])</div></div>
+                                </div>
+                                <div v-if="gameState.last_result.log.includes('触发') || gameState.last_result.log.includes('冲突') || gameState.last_result.log.includes('互换')" class="mt-2 text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded inline-block">[[ gameState.last_result.log.split('|').slice(1).join(' | ') ]]</div>
+                            </div>
+                            <div class="flex-1 overflow-y-auto space-y-2 pr-1 pb-2">
+                                <div v-for="detail in sortedDetails" :key="detail.name" class="flex items-center justify-between p-3 rounded-xl border bg-white" :class="detail.win ? 'border-emerald-200 shadow-sm' : 'border-slate-100'">
+                                    <div class="flex items-center gap-3">
+                                        <span class="font-bold text-sm truncate max-w-[80px]" :class="detail.win ? 'text-emerald-600' : 'text-slate-600'">[[ detail.name ]]</span>
+                                        <div class="flex flex-col">
+                                            <span class="text-xs font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">[[ detail.val ]]</span>
+                                            <span v-if="detail.source && detail.source !== detail.name" class="text-[8px] text-indigo-500 font-bold">(来自: [[ detail.source ]])</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span v-if="detail.win" class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">WIN</span>
+                                        <span v-else class="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded animate-pulse">-[[ detail.dmg ]]</span>
+                                        <div class="flex flex-col items-end w-8"><span class="text-sm font-black text-slate-700 leading-none">[[ detail.hp ]]</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-else-if="gameState.phase === 'END'" class="glass rounded-2xl w-full flex flex-col h-full max-h-[700px] overflow-hidden shadow-lg">
+                            <div class="w-full p-4 md:p-6 text-center shrink-0">
+                                <div class="text-6xl mb-2 animate-bounce">👑</div>
+                                <h2 class="text-2xl font-black text-slate-800">GAME OVER</h2>
+                                <p class="text-lg text-indigo-600 font-bold mb-2">Winner: [[ getWinnerName() ]]</p>
+                                <p class="text-xs text-slate-500">New Game in [[ timer ]]s</p>
+                                <button @click="resetGame" class="mt-2 bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg active:scale-95">Reset Now</button>
+                            </div>
+                            <div class="w-full flex-1 overflow-y-auto bg-white/50 p-4 border-t border-slate-200">
+                                <h3 class="text-xs font-bold text-slate-400 uppercase mb-4 sticky top-0 bg-white/90 backdrop-blur py-2 text-center">Battle Log</h3>
+                                <div class="space-y-4 pb-4">
+                                    <div v-for="round in gameState.full_history" :key="round.round_num" class="bg-white p-3 rounded-lg shadow-sm border border-slate-100">
+                                        <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-50">
+                                            <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">R[[ round.round_num ]]</span>
+                                            <span class="text-[10px] text-slate-400 font-mono">Avg:[[ round.avg ]] → Target:[[ round.target ]]</span>
+                                        </div>
+                                        <div v-if="round.event_desc" class="mb-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded font-bold border border-amber-100">⚡ [[ round.event_desc ]]</div>
+                                        <div class="space-y-1">
+                                            <div v-for="p in round.player_data" class="flex justify-between items-center text-[10px]">
+                                                <span class="font-bold w-12 truncate" :class="p.win ? 'text-emerald-600' : 'text-slate-600'">[[ p.name ]]</span>
+                                                <span class="font-mono bg-slate-50 px-1 rounded text-slate-500">[[ p.val ]]</span>
+                                                <span v-if="p.win" class="font-bold text-emerald-500">WIN</span>
+                                                <span v-else class="font-bold text-red-400">-[[ p.dmg ]]</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </transition>
+                </div>
+
+                <div v-if="hasJoined && gameState.phase !== 'LOBBY'" class="w-10 md:w-12 flex flex-col justify-center gap-3 md:gap-4 shrink-0">
+                    <button @click="sendEmote('😆')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">😆</button>
+                    <button @click="sendEmote('😭')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">😭</button>
+                    <button @click="sendEmote('❓')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">❓</button>
+                    <button @click="sendEmote('😱')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">😱</button>
+                    
+                    <div class="h-px bg-slate-300 w-full my-1"></div>
+                    <button @click="promptCustomEmote" class="w-8 h-8 md:w-10 md:h-10 bg-indigo-500 text-white rounded-full shadow-md text-lg md:text-xl hover:bg-indigo-600 transition active:scale-95 flex items-center justify-center">➕</button>
+                </div>
+                <div v-else class="w-10 md:w-12 shrink-0"></div>
+
+            </div>
+        </div>
 
         <transition name="fade">
             <div v-if="showAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                 <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[80vh]">
-                    <div class="bg-slate-900 text-white p-4 flex justify-between items-center shrink-0">
-                        <span class="font-bold">ADMIN PANEL</span>
-                        <button @click="showAdmin = false" class="text-slate-400 hover:text-white">✕</button>
-                    </div>
+                    <div class="bg-slate-900 text-white p-4 flex justify-between items-center shrink-0"><span class="font-bold">ADMIN PANEL</span><button @click="showAdmin = false" class="text-slate-400 hover:text-white">✕</button></div>
                     <div class="p-6 flex-1 overflow-y-auto">
-                        <div v-if="!isAdminAuth" class="space-y-4">
-                            <input v-model="adminPass" type="password" class="w-full border p-3 rounded-lg text-center" placeholder="Password">
-                            <button @click="adminLogin" class="w-full bg-slate-800 text-white p-3 rounded-lg font-bold">解锁</button>
-                            <p v-if="adminError" class="text-red-500 text-xs text-center">密码错误</p>
-                        </div>
+                        <div v-if="!isAdminAuth" class="space-y-4"><input v-model="adminPass" type="password" class="w-full border p-3 rounded-lg text-center" placeholder="Password"><button @click="adminLogin" class="w-full bg-slate-800 text-white p-3 rounded-lg font-bold">解锁</button><p v-if="adminError" class="text-red-500 text-xs text-center">密码错误</p></div>
                         <div v-else class="space-y-6">
-                            <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold">强制重置游戏 (清空所有人)</button>
-                            <div>
-                                <h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Trigger Event</h3>
-                                <div class="space-y-2">
-                                    <div v-for="event in adminTempPool" :key="event.id" class="text-xs border rounded-lg p-2 bg-indigo-50 flex justify-between items-center gap-2">
-                                        <span class="text-indigo-800 leading-tight flex-1">[[ event.desc ]]</span>
-                                        <button @click="adminAddTempRule(event.id)" class="bg-indigo-600 text-white px-2 py-1 rounded whitespace-nowrap">触发</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div>
-                                <div class="flex justify-between items-center mb-2"><h3 class="text-xs font-bold text-slate-400 uppercase">Inject Perm Rules</h3><button @click="refreshPool" class="text-xs text-indigo-500">刷新</button></div>
-                                <div class="space-y-2">
-                                    <div v-for="rule in adminPermPool" :key="rule.id" class="text-xs border rounded-lg p-2 bg-slate-50 flex justify-between items-center gap-2">
-                                        <span class="text-slate-600 leading-tight flex-1">[[ rule.desc ]]</span>
-                                        <button @click="adminAddPermRule(rule.id)" class="bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap">添加</button>
-                                    </div>
-                                </div>
-                            </div>
+                            <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold">强制重置 (清空)</button>
+                            <div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Trigger Event</h3><div class="space-y-2"><div v-for="event in adminTempPool" :key="event.id" class="text-xs border rounded-lg p-2 bg-indigo-50 flex justify-between items-center gap-2"><span class="text-indigo-800 leading-tight flex-1">[[ event.desc ]]</span><button @click="adminAddTempRule(event.id)" class="bg-indigo-600 text-white px-2 py-1 rounded whitespace-nowrap">触发</button></div></div></div>
+                            <div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Inject Perm Rules</h3><div class="space-y-2"><div v-for="rule in adminPermPool" :key="rule.id" class="text-xs border rounded-lg p-2 bg-slate-50 flex justify-between items-center gap-2"><span class="text-slate-600 leading-tight flex-1">[[ rule.desc ]]</span><button @click="adminAddPermRule(rule.id)" class="bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap">添加</button></div></div></div>
                         </div>
                     </div>
                 </div>
             </div>
         </transition>
 
-        <div class="flex-1 relative w-full mb-4 z-0">
-            <transition name="fade">
-                <div v-if="gameState.phase === 'LOBBY'" class="absolute inset-0 flex flex-col items-center justify-center glass rounded-2xl p-6">
-                    <div v-if="!hasJoined" class="w-full">
-                        <div class="mb-8 text-center"><h2 class="text-xl font-bold mb-2">加入对局</h2><p class="text-xs text-slate-500">请输入代号</p></div>
-                        <input v-model="nickname" @keyup.enter="joinGame" type="text" placeholder="NICKNAME" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 text-center text-lg font-bold uppercase outline-none focus:ring-2 ring-indigo-500">
-                        <button @click="joinGame" class="w-full bg-slate-900 text-white p-4 rounded-xl font-bold text-lg active:scale-95 transition">ENTER</button>
-                    </div>
-                    <div v-else class="w-full text-center flex flex-col h-full">
-                        <h2 class="text-xl font-bold mb-4">等待准备...</h2>
-                        <div class="flex-1 overflow-y-auto space-y-2 mb-4">
-                            <div v-for="p in playerList" :key="p.uid" class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
-                                <span class="font-bold text-sm">[[ p.name ]]</span>
-                                <span v-if="p.ready" class="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-bold">READY</span>
-                                <span v-else class="text-[10px] bg-slate-100 text-slate-400 px-2 py-1 rounded font-bold">WAITING</span>
-                            </div>
-                        </div>
-                        <p class="text-xs text-slate-400 mb-4">[[ readyCount ]] / [[ playerList.length ]] READY (需≥3人)</p>
-                        
-                        <div class="flex gap-2 w-full">
-                            <button @click="leaveGame" class="flex-1 bg-red-100 text-red-600 p-4 rounded-xl font-bold shadow-lg transition active:scale-95">退出</button>
-                            <button @click="toggleReady" :class="me && me.ready ? 'bg-emerald-500 text-white' : 'bg-slate-300 text-white'" class="flex-[2] p-4 rounded-xl font-bold shadow-lg transition active:scale-95">
-                                [[ me && me.ready ? '已准备' : '准备' ]]
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </transition>
-
-            <transition name="fade">
-                <div v-if="gameState.phase === 'PRE_GAME'" class="absolute inset-0 flex flex-col glass rounded-2xl p-6 overflow-hidden">
-                    <div class="text-center mb-6"><h2 class="text-xl font-bold">规则确认</h2></div>
-                    <div class="flex-1 overflow-y-auto space-y-3 pr-2 mb-4">
-                        <div v-for="(rule, idx) in basicRules" :key="idx" class="flex gap-3 text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-100 items-start">
-                            <span class="font-bold text-indigo-500 mt-0.5">[[ idx + 1 ]]</span><span class="leading-tight">[[ rule ]]</span>
-                        </div>
-                    </div>
-                    <div class="mt-auto pt-4 border-t border-slate-100">
-                        <div class="flex justify-between items-center text-xs text-slate-400 mb-3 px-1"><span>全员确认后立即开始</span><span class="font-mono">[[ confirmedCount ]] / [[ playerList.length ]]</span></div>
-                        <button @click="confirmRule" :disabled="me && me.confirmed" :class="me && me.confirmed ? 'bg-emerald-500 cursor-not-allowed' : 'bg-slate-900 active:scale-95'" class="w-full h-14 rounded-xl font-bold text-lg text-white shadow-lg transition">[[ me && me.confirmed ? '等待其他玩家' : '我已知晓' ]]</button>
-                    </div>
-                </div>
-            </transition>
-
-            <transition name="fade">
-                <div v-if="gameState.phase === 'RULE_ANNOUNCEMENT'" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-white rounded-2xl p-6 z-50 overflow-hidden relative">
-                    <div class="absolute top-0 left-0 w-full h-4 hazard-stripe opacity-80"></div><div class="absolute bottom-0 left-0 w-full h-4 hazard-stripe opacity-80"></div>
-                    <div class="text-6xl mb-6 animate-bounce">⚠</div>
-                    <h2 class="text-3xl font-black text-yellow-400 mb-2 tracking-widest text-center">WARNING</h2>
-                    <p class="text-sm text-slate-400 mb-8 uppercase tracking-widest">Player Eliminated</p>
-                    <div class="bg-red-600 p-6 rounded-xl shadow-2xl w-full text-center border-2 border-red-400">
-                        <p class="text-xl font-black text-white leading-relaxed">[[ gameState.new_rule ? gameState.new_rule.desc : 'Loading...' ]]</p>
-                    </div>
-                    <div class="mt-8 text-center"><p class="text-xs text-slate-500">RESUMING IN</p><p class="text-4xl font-mono font-bold text-yellow-400">[[ timer ]]</p></div>
-                </div>
-            </transition>
-
-            <transition name="fade">
-                <div v-if="gameState.phase === 'INPUT'" class="absolute inset-0 flex flex-col glass rounded-2xl p-5">
-                    <div class="mb-4 shrink-0 space-y-2">
-                        <div v-if="gameState.round_event" class="w-full bg-indigo-500 text-white p-2 rounded-lg text-xs font-bold text-center shadow animate-pulse">
-                            [[ gameState.round_event.desc ]]
-                        </div>
-                        <div v-if="gameState.rules.length > 0" class="flex flex-wrap gap-2 max-h-32 overflow-y-auto bg-white/50 p-2 rounded-lg">
-                            <div v-for="rule in gameState.rules" :key="rule.id" class="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded">[[ rule.desc ]]</div>
-                        </div>
-                    </div>
-                    <div class="text-center mb-2"><span class="text-[10px] text-slate-400 font-bold uppercase">Target Multiplier</span><div class="text-2xl font-black text-indigo-600">x[[ gameState.multiplier ]]</div></div>
-                    <div v-if="me && !me.alive" class="flex-1 flex flex-col items-center justify-center text-center"><span class="text-5xl mb-4 grayscale opacity-50">💀</span><h2 class="text-2xl font-black text-slate-800">ELIMINATED</h2></div>
-                    <div v-else-if="me && me.submitted" class="flex-1 flex flex-col items-center justify-center text-center">
-                        <div class="w-16 h-16 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mb-4"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>
-                        <h2 class="text-lg font-bold text-slate-700">已提交</h2><p class="text-3xl font-black text-slate-900 mt-1">[[ myGuess ]]</p>
-                    </div>
-                    <div v-else class="flex-1 flex flex-col justify-center">
-                        <div class="text-center mb-6"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select Number</label><div class="text-8xl font-black text-slate-800 my-2 tabular-nums tracking-tighter">[[ inputVal ]]</div></div>
-                        <div class="px-2 mb-8"><input type="range" min="0" max="100" v-model.number="inputVal" class="w-full h-3 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-900"><div class="flex justify-between text-[10px] text-slate-400 mt-2 font-bold px-1"><span>0</span><span>50</span><span>100</span></div></div>
-                        <button @click="submitGuess" class="w-full bg-slate-900 text-white h-16 rounded-2xl font-bold text-xl shadow-xl hover:bg-slate-800 transform active:scale-95 transition">确认选择</button>
-                    </div>
-                </div>
-            </transition>
-
-            <transition name="fade">
-                <div v-if="gameState.phase === 'RESULT'" class="absolute inset-0 flex flex-col glass rounded-2xl p-5 overflow-hidden">
-                    <div class="text-center mb-4 shrink-0">
-                        <p class="text-[10px] text-slate-400 uppercase mb-2">Round Result</p>
-                        <div class="flex items-center justify-center gap-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                            <div><div class="text-lg text-slate-500 font-medium">[[ gameState.last_result.avg ]]</div><div class="text-[10px] text-slate-300 font-bold">AVG</div></div>
-                            <div class="text-xl text-slate-300">→</div>
-                            <div><div class="text-3xl text-indigo-600 font-black">[[ gameState.last_result.target ]]</div><div class="text-[10px] text-indigo-400 font-bold">TARGET (x[[ gameState.multiplier ]])</div></div>
-                        </div>
-                        <div v-if="gameState.last_result.log.includes('触发') || gameState.last_result.log.includes('冲突') || gameState.last_result.log.includes('互换')" class="mt-2 text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded inline-block">[[ gameState.last_result.log.split('|').slice(1).join(' | ') ]]</div>
-                    </div>
-                    <div class="flex-1 overflow-y-auto space-y-2 pr-1 pb-2">
-                        <div v-for="detail in sortedDetails" :key="detail.name" class="flex items-center justify-between p-3 rounded-xl border" :class="detail.win ? 'bg-indigo-50 border-indigo-100 shadow-sm' : 'bg-white border-slate-100'">
-                            <div class="flex items-center gap-3">
-                                <span class="font-bold text-sm truncate max-w-[80px]" :class="detail.win ? 'text-indigo-700' : 'text-slate-600'">[[ detail.name ]]</span>
-                                <div class="flex flex-col">
-                                    <span class="text-xs font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">[[ detail.val ]]</span>
-                                    <span v-if="detail.source && detail.source !== detail.name" class="text-[8px] text-indigo-500 font-bold">(来自: [[ detail.source ]])</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2"><span v-if="detail.win" class="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">WIN</span><span v-else class="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded animate-pulse">-[[ detail.dmg ]]</span><div class="flex flex-col items-end w-8"><span class="text-sm font-black text-slate-700 leading-none">[[ detail.hp ]]</span></div></div>
-                        </div>
-                    </div>
-                </div>
-            </transition>
-
-            <transition name="fade">
-                <div v-if="gameState.phase === 'END'" class="absolute inset-0 flex flex-col items-center justify-start glass rounded-2xl z-20 overflow-hidden">
-                    <div class="w-full p-6 text-center shrink-0">
-                        <div class="text-6xl mb-2 animate-bounce">👑</div>
-                        <h2 class="text-2xl font-black text-slate-800">GAME OVER</h2>
-                        <p class="text-lg text-indigo-600 font-bold mb-2">Winner: [[ getWinnerName() ]]</p>
-                        <p class="text-xs text-slate-500">New Game in [[ timer ]]s</p>
-                        <button @click="resetGame" class="mt-2 bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg">Reset Now</button>
-                    </div>
-                    
-                    <div class="w-full flex-1 overflow-y-auto bg-white/50 p-4 border-t border-slate-200">
-                        <h3 class="text-xs font-bold text-slate-400 uppercase mb-4 sticky top-0 bg-white/90 backdrop-blur py-2 text-center">Battle Log</h3>
-                        <div class="space-y-4 pb-4">
-                            <div v-for="round in gameState.full_history" :key="round.round_num" class="bg-white p-3 rounded-lg shadow-sm border border-slate-100">
-                                <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-50">
-                                    <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">R[[ round.round_num ]]</span>
-                                    <span class="text-[10px] text-slate-400 font-mono">Avg:[[ round.avg ]] → Target:[[ round.target ]]</span>
-                                </div>
-                                <div v-if="round.event_desc" class="mb-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded font-bold border border-amber-100">⚡ [[ round.event_desc ]]</div>
-                                <div v-if="round.active_rules && round.active_rules.length" class="mb-2 flex flex-wrap gap-1">
-                                    <span v-for="r in round.active_rules" class="text-[8px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">[[ r ]]</span>
-                                </div>
-                                <div class="space-y-1">
-                                    <div v-for="p in round.player_data" class="flex justify-between items-center text-[10px]">
-                                        <div class="flex items-center gap-2">
-                                            <span class="font-bold w-12 truncate" :class="p.win ? 'text-emerald-600' : 'text-slate-600'">[[ p.name ]]</span>
-                                            <span class="font-mono bg-slate-50 px-1 rounded text-slate-500">[[ p.val ]] <span v-if="p.source && p.source !== p.name" class="text-[8px] text-indigo-400 ml-1">(←[[ p.source.substring(0,3) ]])</span></span>
-                                        </div>
-                                        <span v-if="p.win" class="font-bold text-emerald-500">WIN</span>
-                                        <span v-else class="font-bold text-red-400">-[[ p.dmg ]]</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </transition>
-        </div>
-
-        <div class="shrink-0 z-30 mb-2">
-            <div class="bg-slate-900/90 backdrop-blur-md rounded-2xl p-3 shadow-2xl border border-slate-700/50">
-                <div class="flex justify-between items-center mb-2 px-1"><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Player Status</span></div>
-                <div class="grid grid-cols-4 gap-2 items-end">
-                    <div v-for="p in playerList" :key="p.uid" class="flex flex-col items-center group w-full relative">
-                        <div v-if="gameState.blind_mode" class="relative w-full h-10 bg-slate-800 rounded border border-slate-700 flex items-center justify-center"><span class="text-white text-xs font-bold">?</span></div>
-                        <div v-else class="relative w-full h-10 bg-slate-800 rounded overflow-hidden border border-slate-700 shadow-inner">
-                            <div class="absolute bottom-0 left-0 w-full hp-fill transition-all duration-700 ease-out" :class="getHpColor(p.hp)" :style="{ height: (p.hp * 10) + '%' }"></div>
-                            <div class="absolute inset-0 flex items-center justify-center z-10"><span class="text-2xl font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">[[ p.hp ]]</span></div>
-                        </div>
-                        <div class="text-[8px] font-bold text-center text-slate-400 mt-1 truncate w-full">[[ p.name.substring(0, 4) ]]</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
     </div>
 
     <script>
-        const { createApp, ref, computed } = Vue;
+        const { createApp, ref, computed, reactive } = Vue;
         const socket = io({ transports: ['websocket'], upgrade: false, reconnection: true, reconnectionAttempts: 20 });
 
         function getOrCreateUID() {
             let uid = localStorage.getItem('bg_uid');
-            if (!uid) {
-                uid = 'user_' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem('bg_uid', uid);
-            }
+            if (!uid) { uid = 'user_' + Math.random().toString(36).substr(2, 9); localStorage.setItem('bg_uid', uid); }
             return uid;
         }
         const myUid = getOrCreateUID();
@@ -263,6 +262,7 @@
                 const nickname = ref(localStorage.getItem('bg_name') || ''); 
                 const inputVal = ref(50); const timer = ref(0); const myGuess = ref(null); const basicRules = ref([]);
                 const showAdmin = ref(false); const adminPass = ref(''); const isAdminAuth = ref(false); const adminError = ref(false); const adminPermPool = ref([]); const adminTempPool = ref([]);
+                const activeEmotes = reactive({});
 
                 socket.on('connect', () => { socket.emit('identify', { uid: myUid }); });
                 document.addEventListener("visibilitychange", () => { if (!document.hidden && !socket.connected) socket.connect(); });
@@ -273,6 +273,11 @@
                 socket.on('admin_auth_success', (data) => { isAdminAuth.value = true; adminError.value = false; adminPermPool.value = data.perm_pool; adminTempPool.value = data.temp_pool; });
                 socket.on('admin_auth_fail', () => { adminError.value = true; });
                 socket.on('admin_pool_update', (data) => { adminPermPool.value = data.perm_pool; adminTempPool.value = data.temp_pool; });
+                
+                socket.on('player_emote', (data) => {
+                    activeEmotes[data.uid] = data.emote;
+                    setTimeout(() => { delete activeEmotes[data.uid]; }, 2000);
+                });
 
                 const me = computed(() => gameState.value.players[myUid]);
                 const hasJoined = computed(() => !!gameState.value.players[myUid]);
@@ -283,6 +288,11 @@
 
                 const joinGame = () => { if(nickname.value) { localStorage.setItem('bg_name', nickname.value); socket.emit('join', { uid: myUid, name: nickname.value }); } };
                 const leaveGame = () => { socket.emit('leave_game', { uid: myUid }); };
+                const sendEmote = (emote) => { socket.emit('send_emote', { uid: myUid, emote }); };
+                const promptCustomEmote = () => {
+                    const val = prompt("输入发送内容（最多4字）:");
+                    if(val) sendEmote(val);
+                };
                 const toggleReady = () => socket.emit('toggle_ready');
                 const confirmRule = () => socket.emit('confirm_rule');
                 const submitGuess = () => { myGuess.value = inputVal.value; socket.emit('submit_guess', { val: inputVal.value }); if(me.value) me.value.submitted = true; };
@@ -299,9 +309,9 @@
 
                 return {
                     gameState, nickname, inputVal, timer, myUid, basicRules,
-                    me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount,
+                    me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount, activeEmotes,
                     showAdmin, adminPass, isAdminAuth, adminError, adminPermPool, adminTempPool,
-                    joinGame, leaveGame, toggleReady, confirmRule, submitGuess, resetGame,
+                    joinGame, leaveGame, sendEmote, promptCustomEmote, toggleReady, confirmRule, submitGuess, resetGame,
                     adminLogin, adminReset, adminAddPermRule, adminAddTempRule, refreshPool,
                     getHpColor, getWinnerName
                 }

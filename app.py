@@ -12,7 +12,7 @@ app.config['SECRET_KEY'] = 'secret!'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-ADMIN_PASSWORD = "110120119" 
+ADMIN_PASSWORD = "admin" 
 
 MAX_HP = 10
 MAX_PLAYERS = 8
@@ -21,7 +21,6 @@ TIME_LIMIT_PREGAME = 60
 TIME_LIMIT_RULE = 5
 TIME_LIMIT_GAMEOVER = 60 
 
-# 用户 ID 映射表
 SID_TO_UID = {} 
 
 game_state = {
@@ -44,13 +43,14 @@ BASIC_RULES = [
     "每轮选取 0 至 100 之间的整数。",
     "目标值为全员平均数的 X 倍 (默认为 0.8)。",
     "最接近目标者获胜，其余玩家扣除 1 点生命。",
-    "玩家淘汰时，追加永久规则；每回合可能触发随机限定规则。"
+    "有玩家淘汰时，追加永久规则。"
+    "每回合可能触发随机限定规则。"
 ]
 
 PERMANENT_RULE_POOL = [
     {"id": 1, "desc": "【冲突】若数字重复，则选择无效并扣除 1 点生命。", "type": "perm"},
     {"id": 2, "desc": "【精准】若赢家误差小于 1，败者将扣除 2 点生命。", "type": "perm"},
-    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者本回合直接获胜。", "type": "perm"},
+    {"id": 3, "desc": "【极值】若 0 与 100 同时出现，选 100 者直接获胜。", "type": "perm"},
     {"id": 4, "desc": "【幽灵】已淘汰玩家的最后数字将永远参与均值计算。", "type": "perm"},
     {"id": 5, "desc": "【绝境】HP < 3 的玩家，其数字对均值的权重变为 3 倍。", "type": "perm"}
 ]
@@ -58,8 +58,8 @@ PERMANENT_RULE_POOL = [
 ROUND_EVENT_POOL = [
     {"id": 101, "desc": "【混乱】本回合所有人的数字将随机互换！", "type": "temp"},
     {"id": 102, "desc": "【波动】本回合目标倍率发生突变！", "type": "temp"},
-    {"id": 103, "desc": "【安全】本回合选择 40-60 之间数字的人，免除扣血！", "type": "temp"},
-    {"id": 104, "desc": "【黑暗】本回合隐藏所有人的 HP 和状态。", "type": "temp"}
+    {"id": 103, "desc": "【安全】本回合选择 40-60 之间数字的人免除扣血！但胜者+1血！", "type": "temp"},
+    {"id": 104, "desc": "【黑暗】本回合隐藏所有人的 HP，且无法看到自己选择的数字！", "type": "temp"}
 ]
 
 current_perm_pool = list(PERMANENT_RULE_POOL)
@@ -94,13 +94,9 @@ def handle_timeout(phase):
         perform_reset()
 
 def perform_reset():
-    """执行重置：清空所有玩家，回到初始状态"""
     global game_state, current_perm_pool, SID_TO_UID
-    
-    # 核心修改：重置时清空玩家列表和ID映射
     game_state["players"] = {} 
     SID_TO_UID = {} 
-    
     game_state["phase"] = "LOBBY"
     game_state["round"] = 0
     game_state["rules"] = []
@@ -119,6 +115,7 @@ def start_new_round():
     game_state["round"] += 1
     game_state["timer"] = TIME_LIMIT_ROUND
     
+    # 重置每回合状态
     for p in game_state["players"].values():
         p["submitted"] = False
         p["guess"] = None
@@ -127,9 +124,22 @@ def start_new_round():
     game_state["round_event"] = None
     game_state["blind_mode"] = False
 
-    if random.random() < 0.4: 
-        event = random.choice(ROUND_EVENT_POOL)
-        apply_round_event(event)
+    # --- 新增：事件触发逻辑 ---
+    alive_count = sum(1 for p in game_state["players"].values() if p["alive"])
+    
+    # 1. 优先判定【混乱】(ID 101)
+    # 条件：只剩2人，且 70% 概率触发
+    if alive_count == 2 and random.random() < 0.7:
+        chaos_event = next(e for e in ROUND_EVENT_POOL if e["id"] == 101)
+        apply_round_event(chaos_event)
+        
+    # 2. 如果没触发混乱，进行常规判定 (30% 概率)
+    elif random.random() < 0.3:
+        # 从池中排除【混乱】，确保它只在两人对决时出现
+        other_events = [e for e in ROUND_EVENT_POOL if e["id"] != 101]
+        if other_events:
+            event = random.choice(other_events)
+            apply_round_event(event)
     
     broadcast_state()
 
@@ -187,11 +197,14 @@ def calculate_round():
 
     guesses = []
     for p in alive:
-        val = p["guess"] if p["guess"] is not None else 0
+        val = p["guess"]
+        # 未选择者随机分配
+        if val is None: val = random.randint(0, 100)
         guesses.append({"player": p, "val": val, "org_val": val, "source": p["name"]}) 
     
     log_msg = f"R{game_state['round']}"
     
+    # 混乱事件：交换数字
     if game_state["round_event"] and game_state["round_event"]["id"] == 101:
         value_source_pairs = [(g["val"], g["player"]["name"]) for g in guesses]
         random.shuffle(value_source_pairs)
@@ -255,7 +268,11 @@ def calculate_round():
         player_guess_data = next(g for g in guesses if g['player'] == p)
         is_winner = p in winners
         actual_dmg = 0
-        if not is_winner:
+        
+        if is_winner:
+            if game_state["round_event"] and game_state["round_event"]["id"] == 103:
+                p["hp"] = min(MAX_HP, p["hp"] + 1)
+        else:
             actual_dmg = base_damage
             if game_state["round_event"] and game_state["round_event"]["id"] == 103:
                 if 40 <= player_guess_data["val"] <= 60:
@@ -354,14 +371,11 @@ def on_join(data):
     uid = data.get('uid')
     if not uid: return
     SID_TO_UID[request.sid] = uid
-    
     if uid in game_state["players"]:
         broadcast_state()
         return
-
     if game_state["phase"] != "LOBBY": return
     if len(game_state["players"]) >= MAX_PLAYERS: return
-    
     name = data.get('name', f'Player')
     game_state["players"][uid] = {
         "name": name, "hp": MAX_HP, "alive": True,
@@ -371,17 +385,21 @@ def on_join(data):
     }
     broadcast_state()
 
-# --- 新增：玩家主动离开 ---
 @socketio.on('leave_game')
 def on_leave(data):
     uid = data.get('uid')
     if uid and uid in game_state["players"]:
         del game_state["players"][uid]
-        # 清理该UID对应的旧socket记录（可选，为了严谨）
         keys_to_remove = [k for k,v in SID_TO_UID.items() if v == uid]
-        for k in keys_to_remove:
-            del SID_TO_UID[k]
+        for k in keys_to_remove: del SID_TO_UID[k]
         broadcast_state()
+
+@socketio.on('send_emote')
+def on_send_emote(data):
+    uid = data.get('uid')
+    emote = data.get('emote')
+    if uid and uid in game_state["players"] and emote:
+        emit('player_emote', {'uid': uid, 'emote': emote[:4]})
 
 @socketio.on('toggle_ready')
 def on_toggle_ready():
@@ -424,8 +442,7 @@ def on_admin_login(data):
 def on_admin_command(data):
     if data.get('password') != ADMIN_PASSWORD: return
     cmd = data.get('cmd')
-    if cmd == 'reset':
-        perform_reset()
+    if cmd == 'reset': perform_reset()
     elif cmd == 'add_perm_rule':
         rule_id = data.get('rule_id')
         rule_to_add = next((r for r in current_perm_pool if r["id"] == rule_id), None)
