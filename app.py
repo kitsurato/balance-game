@@ -12,7 +12,7 @@ app.config['SECRET_KEY'] = 'secret!'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-ADMIN_PASSWORD = "admin" 
+ADMIN_PASSWORD = "110120119" 
 
 MAX_HP = 10
 MAX_PLAYERS = 8
@@ -133,8 +133,8 @@ def start_new_round():
         chaos_event = next(e for e in ROUND_EVENT_POOL if e["id"] == 101)
         apply_round_event(chaos_event)
         
-    # 2. 如果没触发混乱，进行常规判定 (30% 概率)
-    elif random.random() < 0.3:
+    # 2. 如果没触发混乱，进行常规判定 (40% 概率)
+    elif random.random() < 0.4:
         # 从池中排除【混乱】，确保它只在两人对决时出现
         other_events = [e for e in ROUND_EVENT_POOL if e["id"] != 101]
         if other_events:
@@ -462,4 +462,5 @@ def on_admin_command(data):
          emit('admin_pool_update', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL})
 
 if __name__ == '__main__':
+
     socketio.run(app, debug=True, host='0.0.0.0', port=5002)
