@@ -13,7 +13,7 @@ app.config['SECRET_KEY'] = 'secret!'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-ADMIN_PASSWORD = "110120119" 
+ADMIN_PASSWORD = "admin" 
 
 MAX_HP = 10
 MAX_PLAYERS = 8
@@ -43,8 +43,7 @@ game_state = {
     },
     "kick_votes": {},
     "pending_events": { "perm": [], "temp": None },
-    # 新增：同步给前端的剩余规则池
-    "available_perm_rules": [] 
+    "available_perm_rules": []
 }
 
 BASIC_RULES = [
@@ -149,7 +148,7 @@ def start_new_round():
         if alive_count == 2 and random.random() < 0.7:
             chaos_event = next(e for e in ROUND_EVENT_POOL if e["id"] == 101)
             apply_round_event(chaos_event)
-        elif random.random() < 0.4:
+        elif random.random() < 0.3:
             other_events = [e for e in ROUND_EVENT_POOL if e["id"] != 101]
             if other_events:
                 event = random.choice(other_events)
@@ -250,11 +249,13 @@ def calculate_round():
     total_val = 0
     total_w = 0
     values = [] 
+    
     for g in guesses:
         values.append(g['val'])
         w = 3 if (5 in active_rule_ids and g['player']['hp'] < 3) else 1
         total_val += g['val'] * w
         total_w += w
+        
     if 4 in active_rule_ids:
         for ghost_val in game_state["dead_guesses"]:
             total_val += ghost_val
@@ -272,6 +273,7 @@ def calculate_round():
     
     winners = []
     base_damage = 1
+
     rule3_triggered = False
     if 3 in active_rule_ids and 0 in values and 100 in values:
         winners = [g["player"] for g in guesses if g["val"] == 100]
@@ -284,8 +286,11 @@ def calculate_round():
             counts = {x: values.count(x) for x in values}
             conflict_vals = [v for v, c in counts.items() if c > 1]
             candidates = [g for g in guesses if counts[g['val']] == 1]
-            if conflict_vals: log_msg += " | 冲突"
-        if not candidates: winners = []
+            if conflict_vals:
+                log_msg += " | 冲突"
+
+        if not candidates:
+            winners = []
         else:
             candidates.sort(key=lambda x: abs(x['val'] - target))
             min_diff = abs(candidates[0]['val'] - target)
@@ -303,14 +308,19 @@ def calculate_round():
         player_guess_data = next(g for g in guesses if g['player'] == p)
         is_winner = p in winners
         actual_dmg = 0
+        
         if is_winner:
             if game_state["round_event"] and game_state["round_event"]["id"] == 103:
                 p["hp"] = min(MAX_HP, p["hp"] + 1)
         else:
             actual_dmg = base_damage
             if game_state["round_event"] and game_state["round_event"]["id"] == 103:
-                if 40 <= player_guess_data["val"] <= 60: actual_dmg = 0
-            if 6 in active_rule_ids and p['hp'] == max_hp_val: actual_dmg += 1
+                if 40 <= player_guess_data["val"] <= 60:
+                    actual_dmg = 0
+            
+            if 6 in active_rule_ids and p['hp'] == max_hp_val:
+                actual_dmg += 1
+                
             p["hp"] -= actual_dmg
         
         if game_state["round_event"] and game_state["round_event"]["id"] == 106:
@@ -320,10 +330,16 @@ def calculate_round():
 
         p["last_dmg"] = actual_dmg
         p["is_winner"] = is_winner
+        
         round_details.append({
-            "uid": p["uid"], "name": p["name"], "val": player_guess_data["val"],
-            "org_val": player_guess_data["org_val"], "source": player_guess_data["source"], 
-            "hp": p["hp"], "dmg": actual_dmg, "win": is_winner
+            "uid": p["uid"], 
+            "name": p["name"],
+            "val": player_guess_data["val"],
+            "org_val": player_guess_data["org_val"],
+            "source": player_guess_data["source"], 
+            "hp": p["hp"],
+            "dmg": actual_dmg,
+            "win": is_winner
         })
 
     active_rules_desc = []
@@ -336,14 +352,18 @@ def calculate_round():
             active_rules_desc.append(desc)
 
     round_history = {
-        "round_num": game_state["round"], "target": round(target, 2), "avg": round(avg, 2),
+        "round_num": game_state["round"],
+        "target": round(target, 2),
+        "avg": round(avg, 2),
         "event_desc": game_state["round_event"]["desc"] if game_state["round_event"] else None,
-        "active_rules": active_rules_desc, "player_data": round_details
+        "active_rules": active_rules_desc,
+        "player_data": round_details
     }
     game_state["full_history"].append(round_history)
 
     newly_dead = [p for p in players.values() if p["hp"] <= 0 and p["alive"]]
     current_alive_count = sum(1 for p in players.values() if p["hp"] > 0)
+    
     game_state["new_rule"] = None 
     triggered_new_rule = False
 
@@ -367,7 +387,10 @@ def calculate_round():
             triggered_new_rule = True
 
     game_state["last_result"] = {
-        "avg": round(avg, 2), "target": round(target, 2), "details": round_details, "log": log_msg
+        "avg": round(avg, 2),
+        "target": round(target, 2),
+        "details": round_details,
+        "log": log_msg
     }
     game_state["logs"].insert(0, log_msg)
     game_state["phase"] = "RESULT"
@@ -392,7 +415,6 @@ def after_result_display(has_new_rule):
     broadcast_state()
 
 def broadcast_state():
-    # 核心：将当前剩余规则池注入状态，供前端自刎选择使用
     game_state["available_perm_rules"] = current_perm_pool
     socketio.emit('state_update', game_state)
 
@@ -410,7 +432,8 @@ def on_identify(data):
     uid = data.get('uid')
     if uid:
         SID_TO_UID[request.sid] = uid
-        if uid in game_state["players"]: broadcast_state()
+        if uid in game_state["players"]:
+            broadcast_state()
 
 @socketio.on('join')
 def on_join(data):
@@ -425,8 +448,11 @@ def on_join(data):
     name = data.get('name', f'Player')
     game_state["players"][uid] = {
         "uid": uid, "name": name, "hp": MAX_HP, "alive": True,
-        "guess": None, "submitted": False, "confirmed": False, "ready": False,
-        "last_dmg": 0, "is_winner": False, "likes": 0, "likes_sent": 0
+        "guess": None, "submitted": False, 
+        "confirmed": False, "ready": False,
+        "last_dmg": 0, "is_winner": False,
+        "likes": 0,
+        "likes_sent": 0
     }
     broadcast_state()
 
@@ -470,44 +496,28 @@ def on_request_start_game():
     if all(p["ready"] for p in players.values()):
         start_pre_game()
 
-# --- 新增：自刎归天 ---
 @socketio.on('suicide')
 def on_suicide(data):
     sender_sid = request.sid
     uid = SID_TO_UID.get(sender_sid)
     if not uid or uid not in game_state["players"]: return
-    
     player = game_state["players"][uid]
     if not player["alive"]: return
-    
-    # 1. 赐死
     player["hp"] = 0
     player["alive"] = False
-    
-    # 2. 计算剩余人数判定规则
     alive_count = sum(1 for p in game_state["players"].values() if p["alive"])
     selected_rule_id = int(data.get('rule_id'))
-    
-    # 如果剩2人，强制使用 ID 3 (极值)
-    if alive_count == 2:
-        selected_rule_id = 3
-        
-    # 3. 激活规则 (如果规则还在池子里)
+    if alive_count == 2: selected_rule_id = 3
     rule_to_add = next((r for r in current_perm_pool if r["id"] == selected_rule_id), None)
-    
     log_msg = f"{player['name']} 自刎归天！"
-    
     if rule_to_add:
         current_perm_pool.remove(rule_to_add)
         trigger_perm_rule(rule_to_add, log_msg)
-        # 跳转到规则展示阶段 (这也意味着当前 INPUT 回合被中断/跳过)
         game_state["phase"] = "RULE_ANNOUNCEMENT"
         game_state["timer"] = TIME_LIMIT_RULE
         broadcast_state()
     else:
-        # 如果规则选不了（比如已经被用了），那就直接开始新一轮
         start_new_round()
-
 
 @socketio.on('send_emote')
 def on_send_emote(data):
