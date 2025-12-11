@@ -6,6 +6,7 @@ from flask_socketio import SocketIO, emit
 import time
 import threading
 import random
+import math
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -39,6 +40,13 @@ game_state = {
     "full_history": [],
     "config": {
         "max_likes": 10
+    },
+    # 新增：踢人投票记录 { target_uid: [voter_uid_1, voter_uid_2] }
+    "kick_votes": {},
+    # 新增：管理员预设的下回合规则队列
+    "pending_events": {
+        "perm": [], # 待添加的永久规则ID
+        "temp": None # 待触发的回合事件ID
     }
 }
 
@@ -46,8 +54,8 @@ BASIC_RULES = [
     "每轮选取 0 至 100 之间的整数。",
     "目标值为全员平均数的 X 倍 (默认为 0.8)。",
     "最接近目标者获胜，其余玩家扣除 1 点生命。",
-    "每回合可能触发随机限定规则。",
-    "玩家淘汰时，追加永久规则。"
+    "超时未选者，系统将自动随机分配一个数字。",
+    "玩家淘汰时，追加永久规则；每回合可能触发随机限定规则。"
 ]
 
 PERMANENT_RULE_POOL = [
@@ -62,7 +70,7 @@ PERMANENT_RULE_POOL = [
 ROUND_EVENT_POOL = [
     {"id": 101, "desc": "【混乱】决战时刻！两人互换数字！", "type": "temp"},
     {"id": 102, "desc": "【波动】本回合目标倍率发生突变！", "type": "temp"},
-    {"id": 103, "desc": "【安全】选 40-60 免伤，且本回合胜者 +1 HP！", "type": "temp"},
+    {"id": 103, "desc": "【安全】选 40-60 时 +1 HP，且本回合胜者 +1 HP！", "type": "temp"},
     {"id": 104, "desc": "【黑暗】隐藏全员 HP，且无法看到自己选择的数字！", "type": "temp"},
     {"id": 105, "desc": "【革命】逻辑反转！目标值变为：100 - (均值 x 倍率)！", "type": "temp"},
     {"id": 106, "desc": "【赌徒】幸运尾数！命中幸运数字的人 +1 HP！", "type": "temp"}
@@ -114,6 +122,8 @@ def perform_reset():
     game_state["dead_guesses"] = []
     game_state["blind_mode"] = False
     game_state["full_history"] = []
+    game_state["kick_votes"] = {} # 重置投票
+    game_state["pending_events"] = {"perm": [], "temp": None} # 重置队列
     game_state["config"] = current_config
     current_perm_pool = list(PERMANENT_RULE_POOL)
     broadcast_state()
@@ -133,16 +143,26 @@ def start_new_round():
 
     alive_count = sum(1 for p in game_state["players"].values() if p["alive"])
     
-    # 2人时 70% 概率触发混乱
-    if alive_count == 2 and random.random() < 0.7:
-        chaos_event = next(e for e in ROUND_EVENT_POOL if e["id"] == 101)
-        apply_round_event(chaos_event)
-    # 常规 30% 概率，排除混乱
-    elif random.random() < 0.3:
-        other_events = [e for e in ROUND_EVENT_POOL if e["id"] != 101]
-        if other_events:
-            event = random.choice(other_events)
+    # 优先检查管理员预设的事件
+    pending_temp_id = game_state["pending_events"]["temp"]
+    
+    if pending_temp_id:
+        # 管理员强制指定了下回合事件
+        event = next((r for r in ROUND_EVENT_POOL if r["id"] == pending_temp_id), None)
+        if event:
             apply_round_event(event)
+        game_state["pending_events"]["temp"] = None # 清空队列
+        
+    else:
+        # 正常随机逻辑
+        if alive_count == 2 and random.random() < 0.7:
+            chaos_event = next(e for e in ROUND_EVENT_POOL if e["id"] == 101)
+            apply_round_event(chaos_event)
+        elif random.random() < 0.3:
+            other_events = [e for e in ROUND_EVENT_POOL if e["id"] != 101]
+            if other_events:
+                event = random.choice(other_events)
+                apply_round_event(event)
     
     broadcast_state()
 
@@ -156,17 +176,14 @@ def apply_round_event(event):
         event_copy["desc"] = f"【波动】本回合目标倍率变更为 x{new_mult} !"
     elif event_copy["id"] == 104: # 黑暗
         game_state["blind_mode"] = True
-    elif event_copy["id"] == 106: # 赌徒 (随机生成 0-9)
+    elif event_copy["id"] == 106: # 赌徒
         lucky_digit = random.randint(0, 9)
         event_copy["lucky_digit"] = lucky_digit 
         event_copy["desc"] = f"【赌徒】幸运尾数 {lucky_digit}！选择以 {lucky_digit} 结尾数字的人，回合后 +1 HP！"
 
 def check_all_ready():
-    players = game_state["players"]
-    ready_count = sum(1 for p in players.values() if p["ready"])
-    if len(players) < 3: return
-    if len(players) == ready_count:
-        start_pre_game()
+    # 仅广播状态，不再自动开始
+    broadcast_state()
 
 def start_pre_game():
     for p in game_state["players"].values():
@@ -211,7 +228,6 @@ def calculate_round():
     
     log_msg = f"R{game_state['round']}"
     
-    # 混乱交换 (错排)
     if game_state["round_event"] and game_state["round_event"]["id"] == 101 and len(guesses) > 1:
         indices = list(range(len(guesses)))
         is_fixed_point = True
@@ -230,6 +246,17 @@ def calculate_round():
         log_msg += " | ⚡交换"
 
     active_rule_ids = set([r["id"] for r in game_state["rules"]])
+    # 优先合并管理员预设的永久规则
+    if game_state["pending_events"]["perm"]:
+        for pid in game_state["pending_events"]["perm"]:
+            # 找到对应规则加入 active_rule_ids，并真正加入 game_state rules
+            rule_obj = next((r for r in PERMANENT_RULE_POOL if r["id"] == pid), None)
+            if rule_obj:
+                if rule_obj not in game_state["rules"]:
+                    game_state["rules"].append(rule_obj)
+                active_rule_ids.add(pid)
+        game_state["pending_events"]["perm"] = [] # 清空队列
+
     is_final_duel = len(alive) <= 2
     if is_final_duel:
         active_rule_ids.add(3) 
@@ -252,7 +279,6 @@ def calculate_round():
     avg = total_val / total_w if total_w else 0
     current_mult = game_state["multiplier"]
     
-    # 革命：目标值反转
     if game_state["round_event"] and game_state["round_event"]["id"] == 105:
         target = 100 - (avg * current_mult)
         log_msg += f": 革命! 100 - ({avg:.2f} x {current_mult}) -> 目标 {target:.2f}"
@@ -263,7 +289,6 @@ def calculate_round():
     winners = []
     base_damage = 1
 
-    # 极值判定
     rule3_triggered = False
     if 3 in active_rule_ids and 0 in values and 100 in values:
         winners = [g["player"] for g in guesses if g["val"] == 100]
@@ -289,7 +314,6 @@ def calculate_round():
                 base_damage = 2
                 log_msg += " | 精准"
 
-    # 通缉：计算最高 HP
     max_hp_val = -999
     if 6 in active_rule_ids and alive:
         max_hp_val = max(p['hp'] for p in alive)
@@ -309,13 +333,11 @@ def calculate_round():
                 if 40 <= player_guess_data["val"] <= 60:
                     actual_dmg = 0
             
-            # 通缉：最高血量惩罚
             if 6 in active_rule_ids and p['hp'] == max_hp_val:
                 actual_dmg += 1
                 
             p["hp"] -= actual_dmg
         
-        # 赌徒：幸运数字回血
         if game_state["round_event"] and game_state["round_event"]["id"] == 106:
             lucky = game_state["round_event"].get("lucky_digit")
             if lucky is not None and player_guess_data["val"] % 10 == lucky:
@@ -451,6 +473,17 @@ def on_join(data):
     }
     broadcast_state()
 
+def _cleanup_player_votes(uid):
+    """清理该玩家相关的投票数据"""
+    if uid in game_state["kick_votes"]:
+        del game_state["kick_votes"][uid] # 删除对此人的投票
+    # 删除此人投出的票
+    for target in list(game_state["kick_votes"].keys()):
+        if uid in game_state["kick_votes"][target]:
+            game_state["kick_votes"][target].remove(uid)
+            if not game_state["kick_votes"][target]:
+                del game_state["kick_votes"][target]
+
 @socketio.on('leave_game')
 def on_leave(data):
     uid = data.get('uid')
@@ -458,7 +491,62 @@ def on_leave(data):
         del game_state["players"][uid]
         keys_to_remove = [k for k,v in SID_TO_UID.items() if v == uid]
         for k in keys_to_remove: del SID_TO_UID[k]
+        _cleanup_player_votes(uid) # 清理投票
         broadcast_state()
+
+@socketio.on('vote_kick')
+def on_vote_kick(data):
+    if game_state["phase"] != "LOBBY": return
+    
+    sender_sid = request.sid
+    voter_uid = SID_TO_UID.get(sender_sid)
+    target_uid = data.get('target_uid')
+    
+    # 验证合法性
+    if not voter_uid or not target_uid: return
+    if voter_uid not in game_state["players"] or target_uid not in game_state["players"]: return
+    if voter_uid == target_uid: return # 不能踢自己
+    
+    # 初始化投票记录
+    if target_uid not in game_state["kick_votes"]:
+        game_state["kick_votes"][target_uid] = []
+        
+    votes = game_state["kick_votes"][target_uid]
+    
+    # 切换投票状态 (投/撤销)
+    if voter_uid in votes:
+        votes.remove(voter_uid)
+    else:
+        votes.append(voter_uid)
+        
+    # 检查是否满足踢人条件 ( > 1/2)
+    total_players = len(game_state["players"])
+    threshold = math.floor(total_players / 2) + 1
+    
+    if len(votes) >= threshold:
+        # 执行踢人
+        del game_state["players"][target_uid]
+        # 清理映射和投票
+        keys_to_remove = [k for k,v in SID_TO_UID.items() if v == target_uid]
+        for k in keys_to_remove: del SID_TO_UID[k]
+        _cleanup_player_votes(target_uid)
+        
+        # 广播踢人消息 (可选)
+        # emit('notification', {'msg': 'Player kicked!'}, broadcast=True)
+    
+    broadcast_state()
+
+@socketio.on('request_start_game')
+def on_request_start_game():
+    if game_state["phase"] != "LOBBY": return
+    
+    players = game_state["players"]
+    # 检查人数
+    if len(players) < 3: return
+    
+    # 检查全员准备
+    if all(p["ready"] for p in players.values()):
+        start_pre_game()
 
 @socketio.on('send_emote')
 def on_send_emote(data):
@@ -523,22 +611,34 @@ def on_admin_login(data):
 def on_admin_command(data):
     if data.get('password') != ADMIN_PASSWORD: return
     cmd = data.get('cmd')
-    if cmd == 'reset': perform_reset()
+    
+    if cmd == 'reset': 
+        perform_reset()
+        
     elif cmd == 'add_perm_rule':
         rule_id = data.get('rule_id')
-        rule_to_add = next((r for r in current_perm_pool if r["id"] == rule_id), None)
-        if rule_to_add:
-            current_perm_pool.remove(rule_to_add)
-            trigger_perm_rule(rule_to_add)
-            game_state["phase"] = "RULE_ANNOUNCEMENT"
-            game_state["timer"] = TIME_LIMIT_RULE
-            broadcast_state()
+        # 如果在LOBBY或PRE_GAME，直接生效
+        if game_state["phase"] in ["LOBBY", "PRE_GAME"]:
+            rule_to_add = next((r for r in current_perm_pool if r["id"] == rule_id), None)
+            if rule_to_add:
+                current_perm_pool.remove(rule_to_add)
+                trigger_perm_rule(rule_to_add)
+                if game_state["phase"] != "LOBBY":
+                    game_state["phase"] = "RULE_ANNOUNCEMENT"
+                    game_state["timer"] = TIME_LIMIT_RULE
+                broadcast_state()
+        else:
+            # 否则加入队列，下回合生效
+            if rule_id not in game_state["pending_events"]["perm"]:
+                game_state["pending_events"]["perm"].append(rule_id)
+                
     elif cmd == 'add_temp_rule':
         rule_id = data.get('rule_id')
-        event = next((r for r in ROUND_EVENT_POOL if r["id"] == rule_id), None)
-        if event:
-            apply_round_event(event)
-            broadcast_state()
+        # 如果在LOBBY，无法添加临时规则
+        if game_state["phase"] == "LOBBY": return
+        # 否则设为下回合事件
+        game_state["pending_events"]["temp"] = rule_id
+        
     elif cmd == 'update_config':
         game_state["config"]["max_likes"] = int(data.get("max_likes", 10))
         broadcast_state()

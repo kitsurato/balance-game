@@ -125,17 +125,35 @@
                             <div v-else class="flex flex-col h-full">
                                 <h2 class="text-xl font-bold mb-4">等待准备</h2>
                                 <div class="flex-1 overflow-y-auto space-y-2 mb-4 bg-white/50 rounded-xl p-2 min-h-0">
-                                    <div v-for="p in playerList" :key="p.uid" class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-left">
-                                        <span class="font-bold text-sm truncate">[[ p.name ]]</span>
-                                        <span v-if="p.ready" class="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-bold shrink-0">READY</span>
-                                        <span v-else class="text-[10px] bg-slate-100 text-slate-400 px-2 py-1 rounded font-bold shrink-0">WAITING</span>
+                                    <div v-for="p in playerList" :key="p.uid" class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-left relative group">
+                                        <div class="flex items-center gap-2 overflow-hidden flex-1">
+                                            <span class="font-bold text-sm truncate">[[ p.name ]]</span>
+                                            <span v-if="gameState.kick_votes && gameState.kick_votes[p.uid]" class="text-[10px] text-red-500 font-bold">[[ gameState.kick_votes[p.uid].length ]]票</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 shrink-0">
+                                            <span v-if="p.ready" class="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-bold">READY</span>
+                                            <span v-else class="text-[10px] bg-slate-100 text-slate-400 px-2 py-1 rounded font-bold">WAITING</span>
+                                            <button v-if="p.uid !== myUid" @click="voteKick(p.uid)" class="text-slate-300 hover:text-red-500 transition p-1" title="Vote Kick">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6"></path></svg>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="mt-auto shrink-0">
                                     <p class="text-xs text-slate-400 mb-4">[[ readyCount ]] / [[ playerList.length ]] READY (Min 3)</p>
-                                    <div class="flex gap-2 w-full">
-                                        <button @click="leaveGame" class="flex-1 bg-red-100 text-red-600 p-3 md:p-4 rounded-xl font-bold shadow-lg transition active:scale-95">退出</button>
-                                        <button @click="toggleReady" :class="me && me.ready ? 'bg-emerald-500 text-white' : 'bg-slate-300 text-white'" class="flex-[2] p-3 md:p-4 rounded-xl font-bold shadow-lg transition active:scale-95">[[ me && me.ready ? '已准备' : '准备' ]]</button>
+                                    <div class="flex flex-col gap-2 w-full">
+                                        <button @click="requestStart" 
+                                            :disabled="!canStart"
+                                            :class="canStart ? 'bg-indigo-600 text-white shadow-lg hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'"
+                                            class="w-full p-4 rounded-xl font-bold text-lg transition active:scale-95 flex items-center justify-center gap-2">
+                                            <span>START GAME</span>
+                                            <svg v-if="canStart" class="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                        </button>
+                                        
+                                        <div class="flex gap-2">
+                                            <button @click="leaveGame" class="flex-1 bg-red-50 text-red-500 p-3 rounded-xl font-bold shadow-sm border border-red-100 transition active:scale-95 text-xs">退出</button>
+                                            <button @click="toggleReady" :class="me && me.ready ? 'bg-emerald-500 text-white' : 'bg-white text-slate-600 border border-slate-200'" class="flex-[2] p-3 rounded-xl font-bold shadow-sm transition active:scale-95 text-sm">[[ me && me.ready ? '已准备' : '准备' ]]</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -299,7 +317,7 @@
 
         const app = createApp({
             setup() {
-                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [] });
+                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [], kick_votes: {} });
                 const nickname = ref(localStorage.getItem('bg_name') || ''); 
                 const inputVal = ref(50); const timer = ref(0); const myGuess = ref(null); const basicRules = ref([]);
                 const showAdmin = ref(false); const adminPass = ref(''); const isAdminAuth = ref(false); const adminError = ref(false); const adminPermPool = ref([]); const adminTempPool = ref([]);
@@ -362,9 +380,14 @@
                 const sortedDetails = computed(() => { if (!gameState.value.last_result.details) return []; return [...gameState.value.last_result.details].sort((a, b) => b.hp - a.hp); });
                 const confirmedCount = computed(() => Object.values(gameState.value.players).filter(p => p.confirmed && p.alive).length);
                 const readyCount = computed(() => Object.values(gameState.value.players).filter(p => p.ready).length);
+                const canStart = computed(() => {
+                    const players = Object.values(gameState.value.players);
+                    return players.length >= 3 && players.every(p => p.ready);
+                });
 
                 const joinGame = () => { if(nickname.value) { localStorage.setItem('bg_name', nickname.value); socket.emit('join', { uid: myUid, name: nickname.value }); } };
                 const leaveGame = () => { socket.emit('leave_game', { uid: myUid }); };
+                const voteKick = (targetUid) => { if(confirm("Vote to kick this player?")) socket.emit('vote_kick', { target_uid: targetUid }); };
                 const sendEmote = (emote) => { socket.emit('send_emote', { uid: myUid, emote }); };
                 const promptCustomEmote = () => { const val = prompt("输入表情 (max 4):"); if(val) sendEmote(val); };
                 const sendLike = (targetUid) => { socket.emit('send_like', { target_uid: targetUid }); };
@@ -372,6 +395,7 @@
                 const toggleReady = () => socket.emit('toggle_ready');
                 const confirmRule = () => socket.emit('confirm_rule');
                 const submitGuess = () => { myGuess.value = inputVal.value; socket.emit('submit_guess', { val: inputVal.value }); if(me.value) me.value.submitted = true; };
+                const requestStart = () => { socket.emit('request_start_game'); };
                 const resetGame = () => { socket.emit('reset_game'); inputVal.value = 50; myGuess.value = null; };
 
                 const adminLogin = () => socket.emit('admin_login', { password: adminPass.value });
@@ -386,11 +410,11 @@
 
                 return {
                     gameState, nickname, inputVal, timer, myUid, basicRules,
-                    me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount, activeEmotes, pigParticles, mainPanelParticles,
+                    me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount, activeEmotes, pigParticles, mainPanelParticles, canStart,
                     showAdmin, adminPass, isAdminAuth, adminError, adminPermPool, adminTempPool, adminSettings,
-                    joinGame, leaveGame, sendEmote, promptCustomEmote, sendLike,
-                    toggleReady, confirmRule, submitGuess, resetGame,
-                    adminLogin, adminReset, adminAddPermRule, adminAddTempRule, refreshPool,
+                    joinGame, leaveGame, voteKick, sendEmote, promptCustomEmote, sendLike,
+                    toggleReady, confirmRule, submitGuess, requestStart, resetGame,
+                    adminLogin, adminReset, adminAddPermRule, adminAddTempRule, updateSettings, refreshPool,
                     getHpColor, getWinnerName
                 }
             }
