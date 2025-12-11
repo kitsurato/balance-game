@@ -13,7 +13,7 @@ app.config['SECRET_KEY'] = 'secret!'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-ADMIN_PASSWORD = "admin" 
+ADMIN_PASSWORD = "110120119" 
 
 MAX_HP = 10
 MAX_PLAYERS = 8
@@ -608,4 +608,5 @@ def on_admin_command(data):
          emit('admin_pool_update', {'perm_pool': current_perm_pool, 'temp_pool': ROUND_EVENT_POOL, 'config': game_state['config']})
 
 if __name__ == '__main__':
+
     socketio.run(app, debug=True, host='0.0.0.0', port=5002)
