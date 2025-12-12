@@ -8,7 +8,6 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    
     <style>
         body { font-family: 'Inter', sans-serif; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
         .layout-container { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
@@ -27,6 +26,8 @@
         @keyframes floatPig { 0% { transform: translateY(20px) scale(0.5); opacity: 0; } 15% { opacity: 1; transform: translateY(0px) scale(1); } 80% { opacity: 0.9; } 100% { transform: translateY(-100px) scale(1.1); opacity: 0; } }
         .pig-particle { position: absolute; bottom: 0; animation: floatPig 2.5s ease-out forwards; pointer-events: none; z-index: 50; font-size: 20px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2)); }
         .text-outline-shadow { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 4px rgba(0,0,0,0.8); color: white; font-weight: 900; }
+        .login-input { width: 100%; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 0.75rem; text-align: center; font-weight: bold; font-size: 1.125rem; outline: none; transition: all 0.2s; }
+        .login-input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -37,17 +38,51 @@
         <header class="flex justify-between items-center p-3 z-10 shrink-0 bg-slate-200/50 backdrop-blur-sm">
             <div class="flex items-center gap-2">
                 <button @click="showAdmin = true" class="text-slate-400 hover:text-slate-600 p-1 bg-white rounded-full shadow-sm"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
-                <h1 class="text-lg font-black tracking-tighter text-slate-900 leading-none">BALANCE</h1>
+                <div class="flex flex-col"><h1 class="text-lg font-black tracking-tighter text-slate-900 leading-none">BALANCE</h1></div>
             </div>
-            <div v-if="gameState.phase !== 'LOBBY'" class="flex items-center gap-2">
-                <span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-1 rounded">R[[ gameState.round ]]</span>
-                <div v-if="['INPUT', 'PRE_GAME', 'RULE_ANNOUNCEMENT', 'END'].includes(gameState.phase)" class="bg-white px-2 py-0.5 rounded shadow-sm text-xl font-light tabular-nums text-slate-700">[[ timer ]]<span class="text-[10px] ml-0.5">s</span></div>
+            <div class="flex items-center gap-2">
+                 <button v-if="isLoggedIn && me && currentView === 'GAME'" @click="fetchHistory" class="p-1.5 text-slate-400 hover:text-indigo-600 transition" title="个人主页"><div class="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-sm shadow-sm">👤</div></button>
+                <div v-if="gameState.phase !== 'LOBBY'" class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-1 rounded">R[[ gameState.round ]]</span>
+                    <div v-if="['INPUT', 'PRE_GAME', 'RULE_ANNOUNCEMENT', 'END'].includes(gameState.phase)" class="bg-white px-2 py-0.5 rounded shadow-sm text-xl font-light tabular-nums text-slate-700">[[ timer ]]<span class="text-[10px] ml-0.5">s</span></div>
+                </div>
             </div>
         </header>
 
         <div class="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
-            <div class="flex flex-row items-center justify-center w-full max-w-5xl gap-2 md:gap-4 h-full max-h-[800px]">
-                
+            <div v-if="currentView === 'LOGIN'" class="w-full max-w-sm glass rounded-2xl p-6 text-center shadow-lg">
+                <h1 class="text-3xl font-black mb-8 text-slate-800">PIG BALANCE</h1>
+                <div class="w-full space-y-4">
+                    <input v-model="loginForm.uid" type="text" placeholder="账号 ID" class="login-input uppercase">
+                    <input v-model="loginForm.password" type="password" placeholder="密码" class="login-input">
+                    <button @click="doLogin" class="w-full bg-slate-900 text-white p-4 rounded-xl font-bold text-lg active:scale-95 transition shadow-lg mt-2">登录 / 注册</button>
+                    <div class="mt-6 p-4 bg-slate-200 rounded-xl text-xs text-slate-500 text-left leading-relaxed">
+                        <p class="font-bold mb-1">📝 说明：</p>
+                        <ul class="list-disc pl-4 space-y-1"><li>首次输入未注册的ID将自动创建账号。</li><li>请妥善保管密码。</li></ul>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else-if="currentView === 'ROOM_LIST'" class="w-full max-w-md h-full flex flex-col glass rounded-2xl shadow-lg overflow-hidden">
+                <div class="p-6 bg-slate-100 border-b border-slate-200 flex justify-between items-center">
+                    <div><h2 class="text-xl font-black">房间列表</h2><div class="flex items-center gap-1 text-sm text-slate-500"><span>[[ me.rank_info.icon ]]</span><span class="font-bold">[[ me.nickname ]]</span></div></div>
+                    <button @click="fetchHistory" class="text-indigo-600 font-bold text-sm">个人主页</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4 space-y-3">
+                    <div v-if="roomList.length === 0" class="text-center text-slate-400 py-10">暂无房间，创建一个吧！</div>
+                    <div v-for="room in roomList" :key="room.id" class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between items-center">
+                        <div><div class="font-bold text-lg">[[ room.name ]]</div><div class="text-xs text-slate-400">人数: [[ room.count ]]/8 | [[ room.phase === 'LOBBY' ? '等待中' : '游戏中' ]]</div></div>
+                        <div class="flex gap-2">
+                             <button v-if="room.count === 0" @click="deleteRoom(room.id)" class="text-red-300 hover:text-red-500 text-xs font-bold px-2">删除</button>
+                             <button @click="joinRoom(room.id, true)" class="bg-amber-100 text-amber-700 px-3 py-2 rounded-lg font-bold text-xs hover:bg-amber-200">观战</button>
+                             <button @click="joinRoom(room.id, false)" class="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-700">加入</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-4 bg-slate-50 border-t border-slate-200"><div class="flex gap-2"><input v-model="newRoomName" type="text" placeholder="新房间名称" class="flex-1 p-3 rounded-lg border border-slate-300 text-sm font-bold"><button @click="createRoom" class="bg-indigo-600 text-white px-6 rounded-lg font-bold shadow hover:bg-indigo-700">创建</button></div></div>
+            </div>
+
+            <div v-else-if="currentView === 'GAME'" class="flex flex-row items-center justify-center w-full max-w-5xl gap-2 md:gap-4 h-full max-h-[800px]">
                 <div class="w-14 md:w-20 h-full flex flex-col gap-2 py-2 overflow-y-auto no-scrollbar shrink-0">
                     <div v-for="p in playerList" :key="p.uid" class="relative group w-full flex-1 min-h-[70px] max-h-[120px] flex flex-col items-center">
                         <div class="absolute bottom-8 left-0 w-full h-48 pointer-events-none z-[60] overflow-visible"><div v-for="pig in pigParticles[p.uid]" :key="pig.id" class="pig-particle" :style="pig.style">🐷</div></div>
@@ -58,56 +93,51 @@
                             <div v-if="!activeEmotes[p.uid] && !gameState.blind_mode" class="absolute inset-0 flex items-center justify-center z-10"><span class="text-sm md:text-lg font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">[[ Math.max(0, p.hp) ]]</span></div>
                         </div>
                         <div class="w-full flex flex-col items-center mt-1 gap-1 relative z-50">
+                            <div v-if="p.rank_info" class="absolute -top-3 right-0 text-xs shadow bg-white rounded-full w-4 h-4 flex items-center justify-center" :title="p.rank_info.title">[[ p.rank_info.icon ]]</div>
                             <div class="text-[8px] md:text-[10px] font-bold text-center text-slate-500 truncate w-full leading-tight">[[ p.name.substring(0, 4) ]]</div>
-                            <button @click.stop="sendLike(p.uid)" :disabled="me && me.likes_sent >= (gameState.config?.max_likes || 10)" :class="me && me.likes_sent >= (gameState.config?.max_likes || 10) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-pink-100 hover:bg-pink-200 text-pink-600 active:scale-95 border-pink-200'" class="flex items-center justify-center gap-1 w-full h-7 md:h-8 rounded-md transition shadow-sm border select-none"><span v-if="me && me.likes_sent >= (gameState.config?.max_likes || 10)" class="text-[8px] font-bold">MAX</span><template v-else><span class="text-xs md:text-sm">🐷</span><span class="text-xs md:text-sm font-black">[[ p.likes || 0 ]]</span></template></button>
+                            <button @click.stop="sendLike(p.uid)" :disabled="me && (me.likes_sent >= (gameState.config?.max_likes || 10) || me.isSpectator)" :class="me && (me.likes_sent >= (gameState.config?.max_likes || 10) || me.isSpectator) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-pink-100 hover:bg-pink-200 text-pink-600 active:scale-95 border-pink-200'" class="flex items-center justify-center gap-1 w-full h-7 md:h-8 rounded-md transition shadow-sm border select-none"><span v-if="me && me.likes_sent >= (gameState.config?.max_likes || 10)" class="text-[8px] font-bold">MAX</span><template v-else><span class="text-xs md:text-sm">🐷</span><span class="text-xs md:text-sm font-black">[[ p.likes || 0 ]]</span></template></button>
                         </div>
                     </div>
                 </div>
 
                 <div class="flex-1 h-full flex items-center justify-center max-w-md w-full relative">
                     <div class="absolute inset-x-0 bottom-0 h-full pointer-events-none z-[70] overflow-hidden"><div v-for="pig in mainPanelParticles" :key="pig.id" class="pig-particle" :style="pig.style">🐷</div></div>
+                    <button v-if="me" @click="fetchHistory" class="absolute top-4 right-4 z-50 p-2 text-slate-400 hover:text-indigo-600 transition bg-white/50 backdrop-blur rounded-full shadow-sm" title="个人主页"><div class="w-8 h-8 flex items-center justify-center text-lg">👤</div></button>
+                    <div v-if="me && me.isSpectator" class="absolute top-0 left-0 w-full bg-amber-400 text-amber-900 text-center text-xs font-bold py-1 z-[60] shadow-md">正在观战中</div>
 
                     <transition name="fade" mode="out-in">
-                        <div v-if="gameState.phase === 'LOBBY'" class="glass rounded-2xl p-4 md:p-8 w-full text-center shadow-lg h-auto flex flex-col max-h-[90%]">
-                            <div v-if="!hasJoined">
-                                <div class="mb-6"><h2 class="text-xl font-bold mb-2">加入对局</h2><p class="text-xs text-slate-500">请输入你的代号</p></div>
-                                <input v-model="nickname" @keyup.enter="joinGame" type="text" placeholder="NAME" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 text-center text-lg font-bold uppercase outline-none focus:ring-2 ring-indigo-500">
-                                <button @click="joinGame" class="w-full bg-slate-900 text-white p-4 rounded-xl font-bold text-lg active:scale-95 transition">JOIN</button>
-                            </div>
-                            <div v-else class="flex flex-col h-full">
+                        <div v-if="gameState.phase === 'LOBBY'" class="glass rounded-2xl p-4 md:p-8 w-full text-center shadow-lg h-auto flex flex-col max-h-[90%] text-slate-800" key="LOBBY">
+                            <div class="flex flex-col h-full">
                                 <h2 class="text-xl font-bold mb-4">等待准备</h2>
                                 <div class="flex-1 overflow-y-auto space-y-2 mb-4 bg-white/50 rounded-xl p-2 min-h-0">
                                     <div v-for="p in playerList" :key="p.uid" class="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-left relative group">
-                                        <div class="flex items-center gap-2 overflow-hidden flex-1"><span class="font-bold text-sm truncate">[[ p.name ]]</span><span v-if="gameState.kick_votes && gameState.kick_votes[p.uid]" class="text-[10px] text-red-500 font-bold">[[ gameState.kick_votes[p.uid].length ]]票</span></div>
+                                        <div class="flex items-center gap-2 overflow-hidden flex-1"><span class="text-lg">[[ p.rank_info?.icon ]]</span><span class="font-bold text-sm truncate">[[ p.name ]]</span><span v-if="gameState.kick_votes && gameState.kick_votes[p.uid]" class="text-[10px] text-red-500 font-bold">[[ gameState.kick_votes[p.uid].length ]]票</span></div>
                                         <div class="flex items-center gap-2 shrink-0">
                                             <span v-if="p.ready" class="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-bold">READY</span>
                                             <span v-else class="text-[10px] bg-slate-100 text-slate-400 px-2 py-1 rounded font-bold">WAITING</span>
-                                            <button v-if="p.uid !== myUid" @click="voteKick(p.uid)" class="text-slate-300 hover:text-red-500 transition p-1" title="Vote Kick"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6"></path></svg></button>
+                                            <button v-if="p.uid !== myUid && !me.isSpectator" @click="voteKick(p.uid)" class="text-slate-300 hover:text-red-500 transition p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6"></path></svg></button>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="mt-auto shrink-0">
-                                    <p class="text-xs text-slate-400 mb-4">[[ readyCount ]] / [[ playerList.length ]] READY (Min 3)</p>
-                                    <div class="flex flex-col gap-2 w-full">
-                                        <button @click="requestStart" :disabled="!canStart" :class="canStart ? 'bg-indigo-600 text-white shadow-lg hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'" class="w-full p-4 rounded-xl font-bold text-lg transition active:scale-95 flex items-center justify-center gap-2"><span>START GAME</span><svg v-if="canStart" class="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg></button>
-                                        <div class="flex gap-2">
-                                            <button @click="leaveGame" class="flex-1 bg-red-50 text-red-500 p-3 rounded-xl font-bold shadow-sm border border-red-100 transition active:scale-95 text-xs">退出</button>
-                                            <button @click="toggleReady" :class="me && me.ready ? 'bg-emerald-500 text-white' : 'bg-white text-slate-600 border border-slate-200'" class="flex-[2] p-3 rounded-xl font-bold shadow-sm transition active:scale-95 text-sm">[[ me && me.ready ? '已准备' : '准备' ]]</button>
-                                        </div>
+                                <div class="mt-auto shrink-0 flex flex-col gap-2">
+                                    <button v-if="!me.isSpectator" @click="requestStart" :disabled="!canStart" :class="canStart ? 'bg-indigo-600 text-white shadow-lg hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'" class="w-full p-4 rounded-xl font-bold text-lg transition active:scale-95 flex items-center justify-center gap-2"><span>START GAME</span><svg v-if="canStart" class="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg></button>
+                                    <div class="flex gap-2">
+                                        <button @click="leaveRoom" class="flex-1 bg-red-50 text-red-500 p-3 rounded-xl font-bold shadow-sm border border-red-100 transition active:scale-95 text-xs">退出房间</button>
+                                        <button v-if="!me.isSpectator" @click="toggleReady" :class="me && me.ready ? 'bg-emerald-500 text-white' : 'bg-white text-slate-600 border border-slate-200'" class="flex-[2] p-3 rounded-xl font-bold shadow-sm transition active:scale-95 text-sm">[[ me && me.ready ? '已准备' : '准备' ]]</button>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'PRE_GAME'" class="glass rounded-2xl p-4 md:p-6 w-full flex flex-col h-auto max-h-[90%] shadow-lg">
+                        <div v-else-if="gameState.phase === 'PRE_GAME'" class="glass rounded-2xl p-4 md:p-6 w-full flex flex-col h-auto max-h-[90%] shadow-lg" key="PRE_GAME">
                             <div class="text-center mb-4"><h2 class="text-xl font-bold">规则确认</h2></div>
                             <div class="flex-1 overflow-y-auto space-y-2 pr-1 mb-4 bg-white/50 p-2 rounded-xl min-h-0">
-                                <div v-for="(rule, idx) in basicRules" :key="idx" class="flex gap-2 text-xs md:text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-100 items-start"><span class="font-bold text-indigo-500 mt-0.5">[[ idx + 1 ]]</span><span class="leading-tight text-left">[[ rule ]]</span></div>
+                                <div v-for="(rule, idx) in gameState.basic_rules" :key="idx" class="flex gap-2 text-xs md:text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-100 items-start"><span class="font-bold text-indigo-500 mt-0.5">[[ idx + 1 ]]</span><span class="leading-tight text-left">[[ rule ]]</span></div>
                             </div>
-                            <button @click="confirmRule" :disabled="me && me.confirmed" :class="me && me.confirmed ? 'bg-emerald-500 cursor-not-allowed' : 'bg-slate-900 active:scale-95'" class="w-full h-14 rounded-xl font-bold text-lg text-white shadow-lg transition shrink-0">[[ me && me.confirmed ? '等待开始...' : '我已知晓' ]]</button>
+                            <button v-if="!me.isSpectator" @click="confirmRule" :disabled="me && me.confirmed" :class="me && me.confirmed ? 'bg-emerald-500 cursor-not-allowed' : 'bg-slate-900 active:scale-95'" class="w-full h-14 rounded-xl font-bold text-lg text-white shadow-lg transition shrink-0">[[ me && me.confirmed ? '等待开始...' : '我已知晓' ]]</button>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'RULE_ANNOUNCEMENT'" class="bg-slate-900 text-white rounded-2xl p-6 w-full text-center relative overflow-hidden shadow-2xl h-auto">
+                        <div v-else-if="gameState.phase === 'RULE_ANNOUNCEMENT'" class="bg-slate-900 text-white rounded-2xl p-6 w-full text-center relative overflow-hidden shadow-2xl h-auto" key="RULE_ANNOUNCEMENT">
                             <div class="absolute top-0 left-0 w-full h-4 hazard-stripe opacity-80"></div><div class="absolute bottom-0 left-0 w-full h-4 hazard-stripe opacity-80"></div>
                             <div class="text-6xl mb-6 animate-bounce mt-4">⚠</div>
                             <h2 class="text-3xl font-black text-yellow-400 mb-2 tracking-widest">WARNING</h2>
@@ -118,30 +148,46 @@
                             <div class="mt-8 mb-4"><p class="text-xs text-slate-500">RESUMING IN</p><p class="text-4xl font-mono font-bold text-yellow-400">[[ timer ]]</p></div>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'INPUT'" class="glass rounded-2xl p-4 md:p-5 w-full flex flex-col h-auto max-h-[90%] shadow-lg">
+                        <div v-else-if="gameState.phase === 'INPUT'" class="glass rounded-2xl p-4 md:p-5 w-full flex flex-col h-auto max-h-[90%] shadow-lg" key="INPUT">
                             <div class="mb-4 shrink-0 space-y-2">
                                 <div v-if="gameState.round_event" class="w-full bg-indigo-500 text-white p-2 rounded-lg text-xs font-bold text-center shadow animate-pulse">[[ gameState.round_event.desc ]]</div>
                                 <div v-if="gameState.rules.length > 0" class="flex flex-wrap gap-1 md:gap-2 max-h-24 overflow-y-auto bg-white/50 p-2 rounded-lg justify-center">
                                     <div v-for="rule in gameState.rules" :key="rule.id" class="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded">[[ rule.desc ]]</div>
                                 </div>
                             </div>
-                            <div v-if="me && !me.alive" class="flex-1 flex flex-col items-center justify-center text-center"><span class="text-5xl mb-4 grayscale opacity-50">💀</span><h2 class="text-2xl font-black text-slate-800">ELIMINATED</h2></div>
-                            <div v-else-if="me && me.submitted" class="flex-1 flex flex-col items-center justify-center text-center">
-                                <div class="w-16 h-16 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mb-4"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>
-                                <h2 class="text-lg font-bold text-slate-700">已提交</h2><p class="text-3xl font-black text-slate-900 mt-1">[[ myGuess ]]</p>
+                            
+                            <div v-if="me.isSpectator" class="bg-slate-50 p-6 rounded-xl text-center space-y-4">
+                                <div class="text-slate-500 text-sm font-bold tracking-widest">OBSERVING</div>
+                                <div v-if="gameState.full_history.length > 0">
+                                    <div class="text-xs text-slate-400">上一轮目标</div>
+                                    <div class="text-2xl font-bold text-slate-700">[[ gameState.full_history[gameState.full_history.length-1].target ]]</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-slate-400">当前倍率</div>
+                                    <div class="text-xl font-bold text-indigo-600">x[[ gameState.multiplier ]]</div>
+                                </div>
+                                <div class="animate-pulse text-xs text-slate-400 mt-4">等待玩家选择...</div>
                             </div>
-                            <div v-else class="flex-1 flex flex-col justify-center relative">
-                                <div class="text-center mb-2"><span class="text-[10px] text-slate-400 font-bold uppercase">Target Multiplier</span><div class="text-xl md:text-2xl font-black text-indigo-600">x[[ gameState.multiplier ]]</div></div>
-                                <div class="text-center mb-6"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select Number</label><div class="text-7xl md:text-8xl font-black text-slate-800 my-2 tabular-nums tracking-tighter"><span v-if="gameState.blind_mode">???</span><span v-else>[[ inputVal ]]</span></div></div>
-                                <div class="px-2 mb-8"><input type="range" min="0" max="100" v-model.number="inputVal" class="w-full h-3 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-900"><div v-if="!gameState.blind_mode" class="flex justify-between text-[10px] text-slate-400 mt-2 font-bold px-1"><span>0</span><span>50</span><span>100</span></div></div>
-                                <div class="flex gap-2">
-                                    <button @click="showSuicideModal = true" class="w-14 md:w-16 h-14 md:h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-2xl shadow-xl hover:bg-red-900 transition shrink-0 active:scale-95">☠️</button>
-                                    <button @click="submitGuess" class="flex-1 bg-slate-900 text-white h-14 md:h-16 rounded-2xl font-bold text-xl shadow-xl hover:bg-slate-800 transform active:scale-95 transition">确认选择</button>
+
+                            <div v-else>
+                                <div v-if="me && me.alive === false" class="flex-1 flex flex-col items-center justify-center text-center"><span class="text-5xl mb-4 grayscale opacity-50">💀</span><h2 class="text-2xl font-black text-slate-800">ELIMINATED</h2></div>
+                                <div v-else-if="me && me.submitted" class="flex-1 flex flex-col items-center justify-center text-center">
+                                    <div class="w-16 h-16 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mb-4"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>
+                                    <h2 class="text-lg font-bold text-slate-700">已提交</h2><p class="text-3xl font-black text-slate-900 mt-1">[[ myGuess ]]</p>
+                                </div>
+                                <div v-else class="flex-1 flex flex-col justify-center relative">
+                                    <div class="text-center mb-2"><span class="text-[10px] text-slate-400 font-bold uppercase">Target Multiplier</span><div class="text-xl md:text-2xl font-black text-indigo-600">x[[ gameState.multiplier ]]</div></div>
+                                    <div class="text-center mb-6"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select Number</label><div class="text-7xl md:text-8xl font-black text-slate-800 my-2 tabular-nums tracking-tighter"><span v-if="gameState.blind_mode">???</span><span v-else>[[ inputVal ]]</span></div></div>
+                                    <div class="px-2 mb-8"><input type="range" min="0" max="100" v-model.number="inputVal" class="w-full h-3 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-900"><div v-if="!gameState.blind_mode" class="flex justify-between text-[10px] text-slate-400 mt-2 font-bold px-1"><span>0</span><span>50</span><span>100</span></div></div>
+                                    <div class="flex gap-2">
+                                        <button v-if="aliveCount > 2" @click="showSuicideModal = true" class="w-14 md:w-16 h-14 md:h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-2xl shadow-xl hover:bg-red-900 transition shrink-0 active:scale-95">☠️</button>
+                                        <button @click="submitGuess" class="flex-1 bg-slate-900 text-white h-14 md:h-16 rounded-2xl font-bold text-xl shadow-xl hover:bg-slate-800 transform active:scale-95 transition">确认选择</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'RESULT'" class="glass rounded-2xl p-4 w-full flex flex-col h-auto max-h-[90%] shadow-lg">
+                        <div v-else-if="gameState.phase === 'RESULT'" class="glass rounded-2xl p-4 w-full flex flex-col h-auto max-h-[90%] shadow-lg" key="RESULT">
                             <div class="text-center mb-4 shrink-0">
                                 <p class="text-[10px] text-slate-400 uppercase mb-2">Round Result</p>
                                 <div class="flex items-center justify-center gap-4 md:gap-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -162,13 +208,16 @@
                             </div>
                         </div>
 
-                        <div v-else-if="gameState.phase === 'END'" class="glass rounded-2xl w-full flex flex-col h-auto max-h-[90%] overflow-hidden shadow-lg">
+                        <div v-else-if="gameState.phase === 'END'" class="glass rounded-2xl w-full flex flex-col h-auto max-h-[90%] overflow-hidden shadow-lg" key="END">
                             <div class="w-full p-4 md:p-6 text-center shrink-0">
                                 <div class="text-6xl mb-2 animate-bounce">👑</div>
                                 <h2 class="text-2xl font-black text-slate-800">GAME OVER</h2>
                                 <p class="text-lg text-indigo-600 font-bold mb-2">Winner: [[ getWinnerName() ]]</p>
+                                <div v-if="getWinnerName() !== 'Nobody'" class="flex justify-center items-center gap-2 mb-2">
+                                     <span v-if="gameState.full_history.length > 0 && gameState.full_history[gameState.full_history.length-1].player_data.find(p=>p.name==getWinnerName())?.points_change" class="text-sm font-bold text-green-600 bg-green-50 px-2 py-1 rounded">+[[ gameState.full_history[gameState.full_history.length-1].player_data.find(p=>p.name==getWinnerName())?.points_change ]] pts</span>
+                                </div>
                                 <p class="text-xs text-slate-500">New Game in [[ timer ]]s</p>
-                                <button @click="resetGame" class="mt-4 bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg active:scale-95">Reset Now</button>
+                                <button v-if="!me.isSpectator" @click="resetGame" class="mt-4 bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg active:scale-95">返回房间</button>
                             </div>
                             <div class="w-full flex-1 overflow-y-auto bg-white/50 p-4 border-t border-slate-200">
                                 <h3 class="text-xs font-bold text-slate-400 uppercase mb-4 sticky top-0 bg-white/90 backdrop-blur py-2 text-center">Battle Log</h3>
@@ -185,7 +234,7 @@
                     </transition>
                 </div>
 
-                <div v-if="hasJoined && gameState.phase !== 'LOBBY'" class="w-10 md:w-12 flex flex-col justify-center gap-3 md:gap-4 shrink-0">
+                <div v-if="isLoggedIn && gameState.phase !== 'LOBBY'" class="w-10 md:w-12 flex flex-col justify-center gap-3 md:gap-4 shrink-0">
                     <button @click="sendEmote('😆')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">😆</button>
                     <button @click="sendEmote('😭')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">😭</button>
                     <button @click="sendEmote('❓')" class="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-md text-lg md:text-xl hover:scale-110 transition active:scale-95 flex items-center justify-center">❓</button>
@@ -199,39 +248,62 @@
         </div>
 
         <transition name="fade">
-            <div v-if="showSuicideModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div class="bg-red-900 text-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
-                    <div class="p-6 text-center border-b border-red-800">
-                        <h2 class="text-2xl font-black mb-1">自刎归天</h2>
-                        <p class="text-xs text-red-300">牺牲自己，改变世界规则</p>
-                    </div>
-                    <div class="p-4 flex-1 overflow-y-auto max-h-[60vh] space-y-2">
-                        <div v-if="availableRulesForSuicide.length === 0" class="text-center text-red-400 text-sm py-4">无可用规则</div>
-                        <button v-for="rule in availableRulesForSuicide" :key="rule.id" @click="suicide(rule.id)" class="w-full text-left bg-red-800/50 hover:bg-red-700 p-3 rounded-lg border border-red-700 transition group">
-                            <div class="font-bold text-sm text-red-100 group-hover:text-white">[[ rule.desc ]]</div>
-                        </button>
-                    </div>
-                    <div class="p-4 bg-red-950/50"><button @click="showSuicideModal = false" class="w-full py-3 text-sm font-bold text-red-400 hover:text-white">取消</button></div>
+            <div v-if="showSetupNick" class="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900 p-6">
+                <div class="bg-white rounded-2xl p-8 w-full max-w-sm text-center">
+                    <div class="text-4xl mb-4">👋</div>
+                    <h2 class="text-2xl font-bold mb-2">欢迎新玩家！</h2>
+                    <p class="text-slate-500 mb-6 text-sm">请设置一个在游戏中显示的昵称</p>
+                    <input v-model="setupNickVal" type="text" placeholder="你的昵称" class="login-input mb-4 bg-slate-50">
+                    <button @click="doSetupNick" class="w-full bg-indigo-600 text-white p-4 rounded-xl font-bold active:scale-95 transition">开始游戏</button>
                 </div>
             </div>
         </transition>
 
         <transition name="fade">
-            <div v-if="showAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[80vh]">
-                    <div class="bg-slate-900 text-white p-4 flex justify-between items-center shrink-0"><span class="font-bold">ADMIN PANEL</span><button @click="showAdmin = false" class="text-slate-400 hover:text-white">✕</button></div>
-                    <div class="p-6 flex-1 overflow-y-auto">
-                        <div v-if="!isAdminAuth" class="space-y-4"><input v-model="adminPass" type="password" class="w-full border p-3 rounded-lg text-center" placeholder="Password"><button @click="adminLogin" class="w-full bg-slate-800 text-white p-3 rounded-lg font-bold">解锁</button><p v-if="adminError" class="text-red-500 text-xs text-center">密码错误</p></div>
-                        <div v-else class="space-y-6">
-                            <button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold">强制重置 (清空)</button>
-                            <div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Game Settings</h3><div class="flex gap-2 items-center"><span class="text-xs w-24">Max Likes:</span><input type="number" v-model="adminSettings.maxLikes" class="border p-1 w-16 text-center text-xs"><button @click="updateSettings" class="bg-blue-500 text-white px-2 py-1 rounded text-xs">Save</button></div></div>
-                            <div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Trigger Event</h3><div class="space-y-2"><div v-for="event in adminTempPool" :key="event.id" class="text-xs border rounded-lg p-2 bg-indigo-50 flex justify-between items-center gap-2"><span class="text-indigo-800 leading-tight flex-1">[[ event.desc ]]</span><button @click="adminAddTempRule(event.id)" class="bg-indigo-600 text-white px-2 py-1 rounded whitespace-nowrap">触发</button></div></div></div>
-                            <div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Inject Perm Rules</h3><div class="space-y-2"><div v-for="rule in adminPermPool" :key="rule.id" class="text-xs border rounded-lg p-2 bg-slate-50 flex justify-between items-center gap-2"><span class="text-slate-600 leading-tight flex-1">[[ rule.desc ]]</span><button @click="adminAddPermRule(rule.id)" class="bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap">添加</button></div></div></div>
+            <div v-if="showProfile" class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+                    <div class="bg-indigo-600 text-white p-6 text-center shrink-0 relative">
+                        <button @click="showProfile = false" class="absolute top-4 right-4 text-indigo-200 hover:text-white">✕</button>
+                        <div class="text-6xl mb-2">[[ me.rank_info.icon ]]</div>
+                        <h2 class="text-2xl font-black">[[ me.nickname ]]</h2>
+                        <div class="mt-4 w-full bg-indigo-900/50 h-4 rounded-full overflow-hidden relative">
+                            <div class="h-full bg-yellow-400 transition-all duration-1000" :style="{ width: rankProgress.percent + '%' }"></div>
+                        </div>
+                        <div class="flex justify-between text-xs mt-1 text-indigo-200 font-mono">
+                            <span>Score: [[ me.score ]]</span>
+                            <span v-if="rankProgress.nextTarget < 9999">Next: [[ rankProgress.nextTarget ]]</span>
+                            <span v-else>MAX RANK</span>
+                        </div>
+                        <div class="mt-4 flex gap-2 justify-center flex-wrap">
+                            <button v-if="me.rank_info.is_max" @click="rerollTitle" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition">🎲 随机称号 (10分)</button>
+                            <button @click="changeNickname" class="bg-indigo-500 hover:bg-indigo-400 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition">✏️ 修改昵称 (1分)</button>
+                            <button @click="changePassword" class="bg-indigo-500 hover:bg-indigo-400 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition">🔒 修改密码</button>
+                            <button @click="logout" class="bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition">🚪 退出登录</button>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto bg-slate-50 p-4 space-y-3">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">历史战绩</h3>
+                        <div v-if="historyData.length === 0" class="text-center text-slate-400 py-8 text-sm">暂无对局记录</div>
+                        <div v-for="rec in historyData" :key="rec.id" class="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex justify-between items-center">
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-400">[[ rec.time ]]</span>
+                                <div class="flex gap-2 text-xs font-bold text-slate-600">
+                                    <span>Rank: [[ rec.rank.title ]]</span>
+                                    <span v-if="rec.game_rank" class="text-indigo-500">#[[ rec.game_rank ]]/[[ rec.total_players ]]</span>
+                                    <span v-if="rec.is_suicide" class="text-red-500">💀自刎</span>
+                                </div>
+                            </div>
+                            <span :class="rec.score_change >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'" class="px-2 py-1 rounded font-bold text-sm">[[ rec.score_change >= 0 ? '+' : '' ]][[ rec.score_change ]]</span>
                         </div>
                     </div>
                 </div>
             </div>
         </transition>
+
+        <transition name="fade"><div v-if="showSuicideModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"><div class="bg-red-900 text-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col"><div class="p-6 text-center border-b border-red-800"><h2 class="text-2xl font-black mb-1">自刎归天</h2><p class="text-xs text-red-300">牺牲自己，改变世界规则</p></div><div class="p-4 flex-1 overflow-y-auto max-h-[60vh] space-y-2"><div v-if="availableRulesForSuicide.length === 0" class="text-center text-red-400 text-sm py-4">无可用规则</div><button v-for="rule in availableRulesForSuicide" :key="rule.id" @click="suicide(rule.id)" class="w-full text-left bg-red-800/50 hover:bg-red-700 p-3 rounded-lg border border-red-700 transition group"><div class="font-bold text-sm text-red-100 group-hover:text-white">[[ rule.desc ]]</div></button></div><div class="p-4 bg-red-950/50"><button @click="showSuicideModal = false" class="w-full py-3 text-sm font-bold text-red-400 hover:text-white">取消</button></div></div></div></transition>
+        
+        <transition name="fade"><div v-if="showAdmin" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[80vh]"><div class="bg-slate-900 text-white p-4 flex justify-between items-center shrink-0"><span class="font-bold">ADMIN PANEL</span><button @click="showAdmin = false" class="text-slate-400 hover:text-white">✕</button></div><div class="p-6 flex-1 overflow-y-auto"><div v-if="!isAdminAuth" class="space-y-4"><input v-model="adminPass" type="password" class="w-full border p-3 rounded-lg text-center" placeholder="Password"><button @click="adminLogin" class="w-full bg-slate-800 text-white p-3 rounded-lg font-bold">解锁</button><p v-if="adminError" class="text-red-500 text-xs text-center">密码错误</p></div><div v-else class="space-y-6"><button @click="adminReset" class="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg font-bold">强制重置 (清空)</button><div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Game Settings</h3><div class="flex gap-2 items-center"><span class="text-xs w-24">Max Likes:</span><input type="number" v-model="adminSettings.maxLikes" class="border p-1 w-16 text-center text-xs"><button @click="updateSettings" class="bg-blue-500 text-white px-2 py-1 rounded text-xs">Save</button></div></div><div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Trigger Event</h3><div class="space-y-2"><div v-for="event in adminTempPool" :key="event.id" class="text-xs border rounded-lg p-2 bg-indigo-50 flex justify-between items-center gap-2"><span class="text-indigo-800 leading-tight flex-1">[[ event.desc ]]</span><button @click="adminAddTempRule(event.id)" class="bg-indigo-600 text-white px-2 py-1 rounded whitespace-nowrap">触发</button></div></div></div><div><h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Inject Perm Rules</h3><div class="space-y-2"><div v-for="rule in adminPermPool" :key="rule.id" class="text-xs border rounded-lg p-2 bg-slate-50 flex justify-between items-center gap-2"><span class="text-slate-600 leading-tight flex-1">[[ rule.desc ]]</span><button @click="adminAddPermRule(rule.id)" class="bg-slate-800 text-white px-2 py-1 rounded whitespace-nowrap">添加</button></div></div></div></div></div></div></div></transition>
 
     </div>
 
@@ -248,122 +320,211 @@
 
         const app = createApp({
             setup() {
-                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [], kick_votes: {}, available_perm_rules: [] });
-                const nickname = ref(localStorage.getItem('bg_name') || ''); 
+                const gameState = ref({ phase: 'LOBBY', round: 0, players: {}, rules: [], new_rule: null, round_event: null, multiplier: 0.8, last_result: { log: '' }, blind_mode: false, full_history: [], kick_votes: {}, available_perm_rules: [], basic_rules: [] });
+                const loginForm = reactive({ uid: '', password: '', nickname: '' });
+                const isLoggedIn = ref(false);
+                const me = ref(null); 
+                const currentView = ref('LOGIN'); 
+                const roomList = ref([]);
+                const newRoomName = ref('');
+                
+                const nickname = ref(''); 
                 const inputVal = ref(50); const timer = ref(0); const myGuess = ref(null); const basicRules = ref([]);
                 const showAdmin = ref(false); const showSuicideModal = ref(false); 
-                const adminPass = ref(''); const isAdminAuth = ref(false); const adminError = ref(false); const adminPermPool = ref([]); const adminTempPool = ref([]);
-                const activeEmotes = reactive({});
-                const pigParticles = reactive({});
-                const mainPanelParticles = reactive([]);
-                const adminSettings = reactive({ maxLikes: 10 });
+                const showProfile = ref(false); const showSetupNick = ref(false); const setupNickVal = ref('');
+                const historyData = ref([]); 
 
-                socket.on('connect', () => { socket.emit('identify', { uid: myUid }); });
+                const adminPass = ref(''); const isAdminAuth = ref(false); const adminError = ref(false); const adminPermPool = ref([]); const adminTempPool = ref([]);
+                const activeEmotes = reactive({}); const pigParticles = reactive({}); const mainPanelParticles = reactive([]); const adminSettings = reactive({ maxLikes: 10 });
+
                 document.addEventListener("visibilitychange", () => { if (!document.hidden && !socket.connected) socket.connect(); });
+
+                const storedUid = localStorage.getItem('bg_uid');
+                const storedPwd = localStorage.getItem('bg_pwd');
+                if (storedUid && storedPwd) socket.emit('login', { uid: storedUid, password: storedPwd });
+
+                const doLogin = () => {
+                    if(!loginForm.uid || !loginForm.password) return alert("请输入账号和密码");
+                    localStorage.setItem('bg_uid', loginForm.uid);
+                    localStorage.setItem('bg_pwd', loginForm.password);
+                    socket.emit('login', { uid: loginForm.uid, password: loginForm.password });
+                };
+                
+                socket.on('login_result', (data) => {
+                    if (data.success) {
+                        isLoggedIn.value = true;
+                        me.value = data.user;
+                        if (data.is_new) {
+                            showSetupNick.value = true;
+                        } else {
+                            socket.emit('identify', { uid: data.user.uid });
+                            currentView.value = 'ROOM_LIST';
+                            socket.emit('get_room_list');
+                        }
+                    } else { alert(data.msg); }
+                });
+
+                const doSetupNick = () => {
+                    if(!setupNickVal.value) return alert("请输入昵称");
+                    socket.emit('set_nickname', { uid: me.value.uid, nickname: setupNickVal.value });
+                };
+                socket.on('nickname_updated', (data) => {
+                    me.value = data.user;
+                    showSetupNick.value = false;
+                    socket.emit('identify', { uid: data.user.uid });
+                    currentView.value = 'ROOM_LIST';
+                    socket.emit('get_room_list');
+                });
+
+                const logout = () => {
+                    localStorage.removeItem('bg_uid');
+                    localStorage.removeItem('bg_pwd');
+                    location.reload();
+                };
+
+                const changePassword = () => {
+                    const newPwd = prompt("请输入新密码:");
+                    if(newPwd) socket.emit('change_password', { uid: me.value.uid, new_password: newPwd });
+                };
+                socket.on('password_changed', () => alert("密码已修改"));
+
+                socket.on('room_list_update', (list) => { roomList.value = list; });
+                socket.on('room_created', (data) => { joinRoom(data.room_id, false); });
+                socket.on('joined_room_success', (data) => { 
+                    if(me.value) me.value.isSpectator = data.is_spectator; 
+                    currentView.value = 'GAME'; 
+                });
+                socket.on('left_room_success', () => { currentView.value = 'ROOM_LIST'; socket.emit('get_room_list'); });
+                socket.on('reconnect_room', (data) => { 
+                    gameState.value = data.room; 
+                    if(me.value) me.value.isSpectator = data.is_spectator;
+                    currentView.value = 'GAME'; 
+                    
+                    // FIX: 重连时强制同步本地玩家状态（尤其是 alive 状态）
+                    if(me.value && gameState.value.players && gameState.value.players[me.value.uid]) {
+                        const p = gameState.value.players[me.value.uid];
+                        Object.assign(me.value, p); // 覆盖 alive, hp, submitted 等
+
+                        if (p.guess !== null) {
+                             inputVal.value = p.guess;
+                             myGuess.value = p.guess;
+                        }
+                    }
+                });
+                
+                const createRoom = () => { if(!newRoomName.value) return alert("请输入房间名"); socket.emit('create_room', { name: newRoomName.value }); newRoomName.value = ''; };
+                const joinRoom = (roomId, isSpectator) => { socket.emit('join_room', { room_id: roomId, uid: me.value.uid, is_spectator: isSpectator }); };
+                const deleteRoom = (roomId) => { if(confirm("删除房间?")) socket.emit('delete_room', { room_id: roomId }); };
+                const leaveRoom = () => { socket.emit('leave_room_req'); };
+
+                const fetchHistory = () => { if(!me.value) return; socket.emit('get_history', { uid: me.value.uid }); showProfile.value = true; };
+                socket.on('history_data', (data) => { historyData.value = data; });
+                
+                const rankProgress = computed(() => {
+                    if(!me.value) return { percent: 0, nextTarget: 10 };
+                    const score = me.value.score;
+                    if(score < 10) return { percent: (score / 10) * 100, nextTarget: 10 };
+                    if(score < 50) return { percent: ((score - 10) / 40) * 100, nextTarget: 50 };
+                    if(score < 200) return { percent: ((score - 50) / 150) * 100, nextTarget: 200 };
+                    return { percent: 100, nextTarget: 9999 };
+                });
+
+                const rerollTitle = () => { if(confirm("消耗10积分重置称号?")) socket.emit('reroll_title', { uid: me.value.uid }); };
+                const changeNickname = () => {
+                    const newNick = prompt("输入新昵称 (消耗1积分):");
+                    if(newNick) socket.emit('change_nickname', { uid: me.value.uid, new_nick: newNick });
+                };
+                socket.on('reroll_success', (data) => { me.value = data.user; alert("成功!"); });
+                socket.on('error_msg', (data) => alert(data.msg));
 
                 socket.on('init_config', (data) => { basicRules.value = data.basic_rules; });
                 socket.on('state_update', (data) => { 
                     gameState.value = data; 
                     timer.value = data.timer; 
+                    if (me.value && data.players && data.players[me.value.uid]) {
+                        Object.assign(me.value, data.players[me.value.uid]);
+                        if(currentView.value !== 'GAME' && currentView.value !== 'ROOM_LIST' && currentView.value !== 'LOGIN') currentView.value = 'GAME';
+                    }
                 });
                 socket.on('timer_update', (data) => { timer.value = data.timer; });
-                socket.on('admin_auth_success', (data) => { 
-                    isAdminAuth.value = true; adminError.value = false; 
-                    adminPermPool.value = data.perm_pool; 
-                    adminTempPool.value = data.temp_pool; 
-                    if(data.config) adminSettings.maxLikes = data.config.max_likes;
-                });
-                socket.on('admin_auth_fail', () => { adminError.value = true; });
-                socket.on('admin_pool_update', (data) => { adminPermPool.value = data.perm_pool; adminTempPool.value = data.temp_pool; if(data.config) adminSettings.maxLikes = data.config.max_likes; });
-                
-                socket.on('player_emote', (data) => {
-                    activeEmotes[data.uid] = data.emote;
-                    setTimeout(() => { delete activeEmotes[data.uid]; }, 2000);
-                });
-
+                socket.on('player_emote', (data) => { activeEmotes[data.uid] = data.emote; setTimeout(() => { delete activeEmotes[data.uid]; }, 2000); });
                 socket.on('trigger_like_effect', (data) => {
-                    const uid = data.target_uid;
-                    if(!pigParticles[uid]) pigParticles[uid] = [];
+                    const uid = data.target_uid; if(!pigParticles[uid]) pigParticles[uid] = [];
                     const count = 5 + Math.floor(Math.random() * 4);
                     for(let i=0; i<count; i++) {
                         const id = Date.now() + Math.random();
                         const offset = (Math.random() * 40 - 20);
-                        pigParticles[uid].push({
-                            id: id,
-                            style: { left: `calc(50% + ${offset}%)`, animationDuration: (1.5 + Math.random()) + 's', animationDelay: (Math.random() * 1.0) + 's' }
-                        });
+                        pigParticles[uid].push({ id: id, style: { left: `calc(50% + ${offset}%)`, animationDuration: (1.5 + Math.random()) + 's', animationDelay: (Math.random() * 1.0) + 's' } });
                         setTimeout(() => { if(pigParticles[uid]) pigParticles[uid] = pigParticles[uid].filter(p => p.id !== id); }, 2500);
                     }
-                    if (uid === myUid) {
+                    if (me.value && uid === me.value.uid) {
                         for(let i=0; i<8; i++) {
                             const id = Date.now() + Math.random();
-                            mainPanelParticles.push({
-                                id: id,
-                                style: { left: (10 + Math.random() * 80) + '%', animationDuration: (2 + Math.random()) + 's', animationDelay: (Math.random() * 0.5) + 's', fontSize: (24 + Math.random() * 16) + 'px' }
-                            });
+                            mainPanelParticles.push({ id: id, style: { left: (10 + Math.random() * 80) + '%', animationDuration: (2 + Math.random()) + 's', animationDelay: (Math.random() * 0.5) + 's', fontSize: (24 + Math.random() * 16) + 'px' } });
                             setTimeout(() => { const idx = mainPanelParticles.findIndex(p => p.id === id); if(idx !== -1) mainPanelParticles.splice(idx, 1); }, 3000);
                         }
                     }
                 });
 
-                const me = computed(() => gameState.value.players[myUid]);
-                const hasJoined = computed(() => !!gameState.value.players[myUid]);
-                const playerList = computed(() => Object.entries(gameState.value.players).map(([uid, p]) => ({...p, uid})));
-                const sortedDetails = computed(() => { if (!gameState.value.last_result.details) return []; return [...gameState.value.last_result.details].sort((a, b) => b.hp - a.hp); });
-                const confirmedCount = computed(() => Object.values(gameState.value.players).filter(p => p.confirmed && p.alive).length);
-                const readyCount = computed(() => Object.values(gameState.value.players).filter(p => p.ready).length);
-                const canStart = computed(() => {
-                    const players = Object.values(gameState.value.players);
-                    return players.length >= 3 && players.every(p => p.ready);
-                });
+                const myUid = computed(() => me.value ? me.value.uid : null);
+                const hasJoined = computed(() => me.value && gameState.value.players && gameState.value.players[me.value.uid]);
+                const playerList = computed(() => gameState.value.players ? Object.entries(gameState.value.players).map(([uid, p]) => ({...p, uid})) : []);
+                const sortedDetails = computed(() => { if (!gameState.value.last_result || !gameState.value.last_result.details) return []; return [...gameState.value.last_result.details].sort((a, b) => b.hp - a.hp); });
+                const confirmedCount = computed(() => gameState.value.players ? Object.values(gameState.value.players).filter(p => p.confirmed && p.alive).length : 0);
+                const readyCount = computed(() => gameState.value.players ? Object.values(gameState.value.players).filter(p => p.ready).length : 0);
+                const canStart = computed(() => { const players = gameState.value.players ? Object.values(gameState.value.players) : []; return players.length >= 3 && players.every(p => p.ready); });
+                const aliveCount = computed(() => gameState.value.players ? Object.values(gameState.value.players).filter(p => p.alive).length : 0);
                 
                 const availableRulesForSuicide = computed(() => {
-                    // 计算如果我死了还剩几个人
-                    const aliveCount = Object.values(gameState.value.players).filter(p => p.alive).length;
-                    const remaining = aliveCount - 1;
-                    
-                    if (remaining === 2) {
-                        // 强制只显示 ID 3
-                        return gameState.value.available_perm_rules.filter(r => r.id === 3);
-                    }
+                    if (!gameState.value.players) return [];
+                    const remaining = aliveCount.value - 1;
+                    if (remaining === 2) return gameState.value.available_perm_rules.filter(r => r.id === 3);
                     return gameState.value.available_perm_rules;
                 });
 
-                const joinGame = () => { if(nickname.value) { localStorage.setItem('bg_name', nickname.value); socket.emit('join', { uid: myUid, name: nickname.value }); } };
-                const leaveGame = () => { socket.emit('leave_game', { uid: myUid }); };
-                const voteKick = (targetUid) => { if(confirm("Vote to kick this player?")) socket.emit('vote_kick', { target_uid: targetUid }); };
-                const sendEmote = (emote) => { socket.emit('send_emote', { uid: myUid, emote }); };
-                const promptCustomEmote = () => { const val = prompt("输入表情 (max 4):"); if(val) sendEmote(val); };
+                const joinGame = () => { socket.emit('join_room', { room_id: 'default', uid: myUid.value }); };
+                const leaveGame = () => { socket.emit('leave_room_req'); };
+                const voteKick = (targetUid) => { if(confirm("投票踢出?")) socket.emit('vote_kick', { target_uid: targetUid }); };
+                const sendEmote = (emote) => { socket.emit('send_emote', { uid: myUid.value, emote }); };
+                const promptCustomEmote = () => { const val = prompt("表情 (max 4):"); if(val) sendEmote(val); };
                 const sendLike = (targetUid) => { socket.emit('send_like', { target_uid: targetUid }); };
-                const suicide = (ruleId) => { 
-                    if(confirm("确定要自刎归天吗？你将直接淘汰。")) {
-                        socket.emit('suicide', { rule_id: ruleId }); 
-                        showSuicideModal.value = false;
-                    }
-                };
+                const suicide = (ruleId) => { if(confirm("自刎归天？")) { socket.emit('suicide', { rule_id: ruleId }); showSuicideModal.value = false; } };
                 
                 const toggleReady = () => socket.emit('toggle_ready');
                 const confirmRule = () => socket.emit('confirm_rule');
                 const submitGuess = () => { myGuess.value = inputVal.value; socket.emit('submit_guess', { val: inputVal.value }); if(me.value) me.value.submitted = true; };
                 const requestStart = () => { socket.emit('request_start_game'); };
+                // FIX: resetGame 发送正确的事件
                 const resetGame = () => { socket.emit('reset_game'); inputVal.value = 50; myGuess.value = null; };
 
+                // Admin
                 const adminLogin = () => socket.emit('admin_login', { password: adminPass.value });
-                const adminReset = () => { if (confirm("Confirm Reset?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'reset' }); showAdmin.value = false; } };
-                const adminAddPermRule = (id) => { if (confirm("Activate?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_perm_rule', rule_id: id }); } };
-                const adminAddTempRule = (id) => { if (confirm("Trigger?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_temp_rule', rule_id: id }); } };
+                const adminReset = () => { if (confirm("确认重置?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'reset' }); showAdmin.value = false; } };
+                const adminAddPermRule = (id) => { if (confirm("激活规则?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_perm_rule', rule_id: id }); } };
+                const adminAddTempRule = (id) => { if (confirm("触发事件?")) { socket.emit('admin_command', { password: adminPass.value, cmd: 'add_temp_rule', rule_id: id }); } };
                 const updateSettings = () => { socket.emit('admin_command', { password: adminPass.value, cmd: 'update_config', max_likes: adminSettings.maxLikes }); };
                 const refreshPool = () => socket.emit('admin_command', { password: adminPass.value, cmd: 'refresh_pool' });
 
+                socket.on('admin_auth_success', (data) => { 
+                    isAdminAuth.value = true; adminError.value = false; 
+                    adminPermPool.value = data.perm_pool; adminTempPool.value = data.temp_pool; 
+                    if(data.config) adminSettings.maxLikes = data.config.max_likes;
+                });
+                socket.on('admin_auth_fail', () => { adminError.value = true; });
+                socket.on('admin_pool_update', (data) => { adminPermPool.value = data.perm_pool; adminTempPool.value = data.temp_pool; if(data.config) adminSettings.maxLikes = data.config.max_likes; });
+
                 const getHpColor = (hp) => hp > 5 ? 'bg-emerald-400' : (hp > 2 ? 'bg-amber-400' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]');
-                const getWinnerName = () => { const s = Object.values(gameState.value.players).find(p => p.alive); return s ? s.name : 'Nobody'; };
+                const getWinnerName = () => { if(!gameState.value.players) return 'Nobody'; const s = Object.values(gameState.value.players).find(p => p.alive); return s ? s.name : 'Nobody'; };
 
                 return {
                     gameState, nickname, inputVal, timer, myUid, basicRules,
-                    me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount, activeEmotes, pigParticles, mainPanelParticles, canStart,
-                    showAdmin, showSuicideModal, availableRulesForSuicide,
+                    me, hasJoined, playerList, sortedDetails, myGuess, confirmedCount, readyCount, activeEmotes, pigParticles, mainPanelParticles, canStart, aliveCount,
+                    showAdmin, showSuicideModal, showProfile, showSetupNick, setupNickVal, availableRulesForSuicide, isLoggedIn, loginForm, historyData, rankProgress,
                     adminPass, isAdminAuth, adminError, adminPermPool, adminTempPool, adminSettings,
-                    joinGame, leaveGame, voteKick, sendEmote, promptCustomEmote, sendLike, suicide,
+                    currentView, roomList, newRoomName,
+                    doLogin, doSetupNick, createRoom, joinRoom, deleteRoom, leaveRoom, logout, changePassword,
+                    fetchHistory, rerollTitle, changeNickname,
+                    voteKick, sendEmote, promptCustomEmote, sendLike, suicide,
                     toggleReady, confirmRule, submitGuess, requestStart, resetGame,
                     adminLogin, adminReset, adminAddPermRule, adminAddTempRule, updateSettings, refreshPool,
                     getHpColor, getWinnerName
