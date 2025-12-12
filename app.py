@@ -29,7 +29,7 @@ MAX_ROOMS = 5
 TIME_LIMIT_ROUND = 30
 TIME_LIMIT_PREGAME = 60
 TIME_LIMIT_RULE = 5
-TIME_LIMIT_RESULT = 5  # 新增：结算展示时间
+TIME_LIMIT_RESULT = 5
 TIME_LIMIT_GAMEOVER = 60 
 
 ULTIMATE_PIG_NAMES = [
@@ -49,7 +49,7 @@ class User(db.Model):
 
     def get_rank_info(self):
         if self.score < 10:
-            return {"title": "仔猪", "icon": "🍼", "class": "text-gray-500", "is_max": False}
+            return {"title": "猪仔", "icon": "🍼", "class": "text-gray-500", "is_max": False}
         elif self.score < 50:
             return {"title": "保育猪", "icon": "🐽", "class": "text-blue-500", "is_max": False}
         elif self.score < 200:
@@ -119,7 +119,7 @@ def init_room_state(room_id, room_name):
         "round": 0,
         "timer": 0,
         "players": {},
-        "spectators": [],
+        "spectators": [], # Store objects: {uid, name, likes_sent}
         "rules": [],
         "new_rule": None,
         "round_event": None,
@@ -285,6 +285,8 @@ def calculate_points_and_save_room(room, winner_uid):
                 if uid in room["players"]:
                     room["players"][uid]["points_change"] = change
                     room["players"][uid]["rank_info"] = user.get_rank_info()
+                    # FIX: 必须同步 score 回到内存 room 对象，否则前端进度条不更新
+                    room["players"][uid]["score"] = user.score
                 
                 record_data.append({
                     "uid": uid,
@@ -454,13 +456,11 @@ def calculate_round(room_id):
             rule_3 = next((r for r in room["available_perm_rules"] if r["id"] == 3), None)
             if rule_3:
                 room["available_perm_rules"].remove(rule_3)
-                # FIX: 使用 trigger_room_rule 替代不存在的 queue_perm_rule
                 trigger_room_rule(room, rule_3, author_name="System")
         
         if room["available_perm_rules"] and not (current_alive_count==2 and rule_3):
              idx = random.randint(0, len(room["available_perm_rules"]) - 1)
              new_rule = room["available_perm_rules"].pop(idx)
-             # FIX: 使用 trigger_room_rule 替代不存在的 queue_perm_rule
              trigger_room_rule(room, new_rule)
 
     room["last_result"] = {
@@ -468,7 +468,7 @@ def calculate_round(room_id):
     }
     room["logs"].insert(0, log_msg)
     room["phase"] = "RESULT"
-    room["timer"] = TIME_LIMIT_RESULT  # 使用全局变量 5s
+    room["timer"] = TIME_LIMIT_RESULT
 
     if current_alive_count <= 1:
         winner_uid = None
@@ -480,7 +480,6 @@ def calculate_round(room_id):
         room["timer"] = TIME_LIMIT_GAMEOVER
         broadcast_room_list()
     
-    # 无需再开线程，让全局timer处理倒计时
     broadcast_room_state(room_id)
 
 def handle_timeout(room_id):
@@ -490,7 +489,6 @@ def handle_timeout(room_id):
     elif room["phase"] == "RULE_ANNOUNCEMENT": process_announcement_queue(room_id)
     elif room["phase"] == "INPUT": calculate_round(room_id)
     elif room["phase"] == "RESULT":
-        # 结果展示结束，判断是否继续
         if len(room["announcement_queue"]) > 0:
              process_announcement_queue(room_id)
         else:
@@ -570,7 +568,6 @@ def background_timer():
         for room_id in list(rooms.keys()):
             room = rooms.get(room_id)
             if not room: continue
-            # 加入 RESULT 阶段
             if room["phase"] in ["PRE_GAME", "INPUT", "RULE_ANNOUNCEMENT", "END", "RESULT"]:
                 if room["timer"] > 0:
                     room["timer"] -= 1
@@ -613,6 +610,18 @@ def on_set_nickname(data):
             user.nickname = new_nick
             db.session.commit()
             emit('nickname_updated', {'user': user.to_dict()})
+            
+            for room in rooms.values():
+                if uid in room["players"]:
+                    room["players"][uid]["name"] = new_nick
+                    broadcast_room_state(room["id"])
+                    break
+                # Update spectator name as well
+                for spec in room["spectators"]:
+                    if spec["uid"] == uid:
+                        spec["name"] = new_nick
+                        broadcast_room_state(room["id"])
+                        break
 
 @socketio.on('change_nickname')
 def on_change_nickname(data):
@@ -625,6 +634,18 @@ def on_change_nickname(data):
             user.nickname = new_nick
             db.session.commit()
             emit('reroll_success', {'user': user.to_dict()})
+            
+            for room in rooms.values():
+                if uid in room["players"]:
+                    room["players"][uid]["name"] = new_nick
+                    broadcast_room_state(room["id"])
+                    break
+                # Update spectator name
+                for spec in room["spectators"]:
+                    if spec["uid"] == uid:
+                        spec["name"] = new_nick
+                        broadcast_room_state(room["id"])
+                        break
         else:
             emit('error_msg', {'msg': '积分不足'})
 
@@ -671,8 +692,21 @@ def on_join_room_req(data):
     SID_TO_ROOM[request.sid] = room_id
     SID_TO_UID[request.sid] = uid
     
+    # 共同逻辑：获取最新昵称
+    display_name = uid
+    rank_info = {"title": "Unknown", "icon": "❓", "class": "text-gray-500", "is_max": False}
+    current_score = 0
+    with app.app_context():
+        user = db.session.get(User, uid)
+        if user: 
+            rank_info = user.get_rank_info()
+            display_name = user.nickname
+            current_score = user.score
+
     if is_spectator:
-        if uid not in room["spectators"]: room["spectators"].append(uid)
+        # FIX: 观战者存储为对象，包含名字
+        if not any(s['uid'] == uid for s in room["spectators"]):
+             room["spectators"].append({'uid': uid, 'name': display_name, 'likes_sent': 0})
         emit('joined_room_success', {'room_id': room_id, 'is_spectator': True})
         broadcast_room_state(room_id)
         return
@@ -687,21 +721,14 @@ def on_join_room_req(data):
             emit('error_msg', {'msg': '游戏进行中'})
             return
 
-    display_name = uid
-    rank_info = {"title": "Unknown", "icon": "❓", "class": "text-gray-500", "is_max": False}
-    with app.app_context():
-        user = db.session.get(User, uid)
-        if user: 
-            rank_info = user.get_rank_info()
-            display_name = user.nickname
-    
     if uid not in room["players"]:
         room["players"][uid] = {
             "uid": uid, "name": display_name, "hp": MAX_HP, "alive": True,
             "guess": None, "submitted": False, "confirmed": False, "ready": False,
             "last_dmg": 0, "is_winner": False, "likes": 0, "likes_sent": 0,
             "rank_info": rank_info, "points_change": 0,
-            "suicided": False, "hp_at_death": 0
+            "suicided": False, "hp_at_death": 0,
+            "score": current_score # FIX: 增加 score 字段到房间数据
         }
     
     emit('joined_room_success', {'room_id': room_id, 'is_spectator': False})
@@ -720,7 +747,8 @@ def on_identify(data):
                 found_room = room
                 is_spectator = False
                 break
-            if uid in room["spectators"]:
+            # 查找对象列表
+            if any(s['uid'] == uid for s in room["spectators"]):
                 found_room = room
                 is_spectator = True
                 break
@@ -739,7 +767,8 @@ def on_leave_room_req():
         if request.sid in SID_TO_ROOM: del SID_TO_ROOM[request.sid]
         
         if uid in room["players"]: del room["players"][uid]
-        if uid in room["spectators"]: room["spectators"].remove(uid)
+        # FIX: 从对象列表中删除
+        room["spectators"] = [s for s in room["spectators"] if s['uid'] != uid]
             
         if len(room["players"]) == 0 and room["phase"] == "LOBBY":
              del rooms[room["id"]]
@@ -821,7 +850,6 @@ def on_submit(data):
     uid = SID_TO_UID.get(request.sid)
     if room and uid in room["players"]:
         player = room["players"][uid]
-        # 严苛的存活检查
         if not player["alive"]: return
         
         try:
@@ -855,7 +883,6 @@ def on_suicide(data):
         
         if rule_to_add:
             room["available_perm_rules"].remove(rule_to_add)
-            # FIX: 使用 trigger_room_rule 替代不存在的 queue_perm_rule
             trigger_room_rule(room, rule_to_add, author_name=player['name'])
             process_announcement_queue(room["id"])
         else:
@@ -875,9 +902,16 @@ def on_like(data):
     sender_uid = SID_TO_UID.get(request.sid)
     target_uid = data.get('target_uid')
     if room and sender_uid and target_uid:
+        sender = None
+        # FIX: 检查玩家 OR 观战者
         if sender_uid in room["players"]:
-             sender = room["players"][sender_uid]
+            sender = room["players"][sender_uid]
+        else:
+            sender = next((s for s in room["spectators"] if s['uid'] == sender_uid), None)
+            
+        if sender:
              target = room["players"].get(target_uid)
+             # 简单的点赞逻辑，观战者也可以点赞，限制次数
              if target and sender["likes_sent"] < room["config"]["max_likes"]:
                 sender["likes_sent"] += 1
                 target["likes"] += 1
@@ -892,7 +926,6 @@ def on_admin_login(data):
     else:
         emit('admin_auth_fail')
 
-# FIX: 添加 missing 的 reset_game 监听
 @socketio.on('reset_game')
 def on_reset_game():
     room = get_room_by_sid(request.sid)
@@ -911,13 +944,11 @@ def on_admin(data):
     if cmd == 'reset': perform_reset(room["id"])
     elif cmd == 'add_perm_rule':
          rule_id = data.get('rule_id')
-         # 查找规则对象
          rule_to_add = next((r for r in PERMANENT_RULE_POOL if r["id"] == rule_id), None)
          if rule_to_add:
              if room["phase"] in ["LOBBY", "PRE_GAME"]:
                  if rule_to_add in room["available_perm_rules"]:
                      room["available_perm_rules"].remove(rule_to_add)
-                 # 修复：管理员添加不显示来源
                  trigger_room_rule(room, rule_to_add) 
                  
                  if room["phase"] != "LOBBY":
@@ -953,7 +984,6 @@ def on_get_history(data):
                         'game_rank': player_rec.get('game_rank', '-'),
                         'total_players': player_rec.get('total_players', '-'),
                         'is_suicide': player_rec.get('is_suicide', False),
-                        # 移除 details 字段，简化显示
                     })
             except: continue
         emit('history_data', user_history)
